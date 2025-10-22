@@ -6,11 +6,8 @@ import dts from 'vite-plugin-dts';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    // The dts plugin must run before the react plugin to see the original code
+    react(),
     dts({ insertTypesEntry: true }),
-    // The react plugin must be split into two parts
-    react({ jsxRuntime: 'classic' }),
-    { ...react(), enforce: 'post', apply: 'build' },
   ],
   build: {
     lib: {

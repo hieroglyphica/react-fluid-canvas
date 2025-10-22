@@ -8,13 +8,13 @@
   "types": "./react-fluid-canvas.d.ts",
   "files": [
     "dist",
-    "react-fluid-canvas.d.ts",
-    "index.js"
+    "react-fluid-canvas.d.ts"
   ],
   "exports": {
     ".": {
       "import": "./dist/react-fluid-canvas.js",
-      "require": "./dist/react-fluid-canvas.umd.cjs"
+      "require": "./dist/react-fluid-canvas.umd.cjs",
+      "types": "./react-fluid-canvas.d.ts"
     }
   },
   "scripts": {
