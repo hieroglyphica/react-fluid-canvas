@@ -4,6 +4,8 @@ A lightweight and performant React component for creating beautiful, interactive
 
 ![React Fluid Canvas Demo](https://raw.githubusercontent.com/hieroglyphica/react-fluid-canvas/main/docs/assets/demo.gif)
 
+**[Live Demo](https://temporal-codex.web.app/fluid)**
+
 ## Features
 
 - **High Performance**: Offloads all simulation and rendering to the GPU with WebGL shaders.
@@ -26,11 +28,11 @@ yarn add react-fluid-canvas
 Import the component and place it in your application. It will automatically fill its parent container.
 
 ```jsx
-import FluidSimulation from 'react-fluid-canvas';
+import FluidSimulation from "react-fluid-canvas";
 
 function App() {
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: "100vw", height: "100vh" }}>
       <FluidSimulation />
     </div>
   );
@@ -42,7 +44,7 @@ function App() {
 You can override the default simulation settings by passing a `config` object prop.
 
 ```jsx
-import FluidSimulation from 'react-fluid-canvas';
+import FluidSimulation from "react-fluid-canvas";
 
 function MyComponent() {
   const customConfig = {
@@ -57,14 +59,27 @@ function MyComponent() {
   };
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: -1 }}>
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        zIndex: -1,
+      }}
+    >
       <FluidSimulation config={customConfig} />
     </div>
   );
 }
 ```
 
-For a full list of available configuration options, please see `src/config/simulationConfig.js`.
+For a full list of available configuration options, please see the **`CONFIGURATION.md`** file.
+
+## Acknowledgements
+
+This project is inspired by and based on the concepts from Pavel Dobryakov's excellent WebGL Fluid Simulation.
 
 ## License
 
