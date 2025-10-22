@@ -1,7 +1,7 @@
 {
   "name": "react-fluid-canvas",
   "private": false,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "main": "./dist/react-fluid-canvas.umd.cjs",
   "module": "./dist/react-fluid-canvas.js",
