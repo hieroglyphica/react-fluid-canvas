@@ -79,7 +79,7 @@ For a full list of available configuration options, please see the [**`CONFIGURA
 
 ## Acknowledgements
 
-This project is inspired by and based on the concepts from Pavel Dobryakov's excellent WebGL Fluid Simulation.
+This project is inspired by and based on the concepts from Pavel Dobryakov's excellent [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation)
 
 ## License
 
