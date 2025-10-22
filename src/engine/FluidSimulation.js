@@ -294,7 +294,7 @@ export class FluidSimulation {
     webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
     displayProgram.bind();
     webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye.read.attach(0));
-    webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1));
+    webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1)); // Pass the aura texture
     webGL.uniform1i(displayProgram.uniforms.uShadingEnabled, this.config.SHADING);
     webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye.width, 1.0 / this.dye.height);
     webGL.uniform1i(displayProgram.uniforms.transparent, this.config.TRANSPARENT);
