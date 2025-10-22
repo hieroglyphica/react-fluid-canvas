@@ -75,7 +75,7 @@ function MyComponent() {
 }
 ```
 
-For a full list of available configuration options, please see the **`CONFIGURATION.md`** file.
+For a full list of available configuration options, please see the [**`CONFIGURATION.md`**](./CONFIGURATION.md) file.
 
 ## Acknowledgements
 
