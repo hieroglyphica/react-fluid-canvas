@@ -1,4 +1,4 @@
-import FluidSimulation from './FluidSimulation';
+import FluidSimulation from './index.jsx';
 
 function App() {
   // Example of overriding the default configuration
