@@ -27,5 +27,5 @@ const FluidSimulation = forwardRef(({ config: userConfig, style, ...rest }, ref)
 });
 
 FluidSimulation.displayName = 'FluidSimulation';
-
+export { FluidSimulation };
 export default FluidSimulation;
