@@ -300,6 +300,7 @@ export class FluidSimulation {
     webGL.uniform1i(displayProgram.uniforms.transparent, this.config.TRANSPARENT);
     webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
     webGL.uniform1f(displayProgram.uniforms.uBrightness, this.config.BRIGHTNESS);
+    webGL.uniform1i(displayProgram.uniforms.uRayAuraEnabled, this.config.RAY_AURA);
     webGL.uniform1i(displayProgram.uniforms.uRayAura, this.rayAura.attach(2));
     webGL.uniform3f(
       displayProgram.uniforms.backColor,
