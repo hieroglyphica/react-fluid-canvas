@@ -5,6 +5,31 @@
   * - A single number (0 to 1): A monochromatic theme based on that hue.
   * - An array of two numbers [min, max]: A theme that cycles hues within that range.
   */
+
+/**
+ * @typedef {object} FluidSimulationConfig
+ * @property {32 | 64 | 128 | 256} [SIM_RESOLUTION]
+ * @property {256 | 512 | 1024 | 2048} [DYE_RESOLUTION]
+ * @property {number} [DENSITY_DISSIPATION]
+ * @property {number} [VELOCITY_DISSIPATION]
+ * @property {number} [PRESSURE_ITERATIONS]
+ * @property {number} [CURL]
+ * @property {number} [SPLAT_RADIUS]
+ * @property {number} [SPLAT_FORCE]
+ * @property {boolean} [SHADING]
+ * @property {boolean} [COLORFUL]
+ * @property {'default' | number | [number, number]} [COLOR_THEME]
+ * @property {{ r: number; g: number; b: number }} [BACK_COLOR]
+ * @property {boolean} [TRANSPARENT]
+ * @property {boolean} [AURA]
+ * @property {64 | 128 | 196 | 256} [AURA_RESOLUTION]
+ * @property {number} [AURA_WEIGHT]
+ * @property {boolean} [RAY_AURA]
+ * @property {64 | 128 | 196 | 256} [RAY_AURA_RESOLUTION]
+ * @property {number} [RAY_AURA_WEIGHT]
+ * @property {number} [BRIGHTNESS]
+ */
+
 export const config = {
   SIM_RESOLUTION: 128,          // Resolution of the velocity simulation grid. (Range: 32, 64, 128, 256)
   DYE_RESOLUTION: 1024,         // Resolution of the dye texture. (Range: 256, 512, 1024, 2048)
