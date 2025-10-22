@@ -6,6 +6,7 @@ function App() {
     DENSITY_DISSIPATION: 0.99,
     SPLAT_RADIUS: 0.002,
     CURL: 10,
+    TRANSPARENT: true,
     COLOR_THEME:"default", // Cycle between pink and purple hues
   };
 

@@ -47,7 +47,7 @@ export const config = {
   AURA: false,                  // Bloom/glow effect. (Values: true, false)
   AURA_RESOLUTION: 196,         // Resolution of the bloom effect texture. (Range: 64, 128, 196, 256)
   AURA_WEIGHT: 2.5,             // Intensity of the bloom effect. (Range: 1.0 - 8.0)
-  RAY_AURA: false,              // Volumetric light rays effect. (Values: true, false)
+  RAY_AURA: true,              // Volumetric light rays effect. (Values: true, false)
   RAY_AURA_RESOLUTION: 196,     // Resolution of the ray effect texture. (Range: 64, 128, 196, 256)
   RAY_AURA_WEIGHT: 0.5,         // Intensity of the ray effect. (Range: 0.1 - 1.0)
   BRIGHTNESS: 1.5,              // Global brightness multiplier. (Range: 0.5 - 2.5)

@@ -285,9 +285,9 @@ export const displayShader = /* glsl */ `
         // Calculate final alpha after all effects are applied
         float finalAlpha = max(C.r, max(C.g, C.b));
 
-        if (transparent) {
+        if (transparent) { // If background is transparent, blend dye with alpha
             gl_FragColor = vec4(C, finalAlpha);
-        } else {
+        } else { // If background is opaque, mix dye with background color
             gl_FragColor = vec4(mix(backColor, C, finalAlpha), 1.0);
         }
     }
