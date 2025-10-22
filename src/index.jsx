@@ -15,11 +15,11 @@ import { config as defaultConfig } from "./config/simulationConfig";
 const FluidSimulation = forwardRef(({ config: userConfig, style, ...rest }, ref) => {
   const canvasRef = useRef(null);
 
-  const simulationConfig = useMemo(() => {
+  const simulationConfig = useMemo(() => { 
     return { ...defaultConfig, ...userConfig };
   }, [userConfig]);
 
-  useFluidSimulation(canvasRef, simulationConfig);
+  useFluidSimulation(ref || canvasRef, simulationConfig);
   
   return (
     <canvas ref={ref || canvasRef} style={{ width: "100%", height: "100%", display: "block", ...style }} {...rest} />

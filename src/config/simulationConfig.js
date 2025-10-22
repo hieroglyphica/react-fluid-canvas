@@ -33,7 +33,7 @@
 export const config = {
   SIM_RESOLUTION: 128,          // Resolution of the velocity simulation grid. (Range: 32, 64, 128, 256)
   DYE_RESOLUTION: 1024,         // Resolution of the dye texture. (Range: 256, 512, 1024, 2048)
-  DENSITY_DISSIPATION: 1,       // How quickly the dye fades. (Range: 0.9 - 1)
+  DENSITY_DISSIPATION: .99,       // How quickly the dye fades. (Range: 0.9 - 1)
   VELOCITY_DISSIPATION: 0.99,   // How quickly the velocity fades. (Range: 0.9 - 1)
   PRESSURE_ITERATIONS: 20,      // Number of iterations for pressure calculation. (Range: 10 - 60)
   CURL: 20,                     // Strength of the curl noise, adds turbulence. (Range: 0 - 50)

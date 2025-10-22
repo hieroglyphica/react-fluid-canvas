@@ -201,7 +201,7 @@ export const useFluidSimulation = (canvasRef, config) => {
       canvas.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, [canvasRef]);
+  }, [canvasRef, config]);
 
   useEffect(() => {
     if (simulationRef.current) {
