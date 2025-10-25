@@ -68,22 +68,52 @@ export class WebGLManager {
     let webGL = canvas.getContext("webgl2", params);
     const isWebGL2 = !!webGL;
     if (!isWebGL2) {
-      webGL = canvas.getContext("webgl", params) || canvas.getContext("experimental-webgl", params);
+      webGL = canvas.getContext("webgl", params) || canvas.getContext("experimental-web-gl", params);
     }
 
     if (!webGL) return { webGL: null, ext: {} };
     
+    // Expose whether this is WebGL2
+    ext.isWebGL2 = isWebGL2;
+    
+    // Read debug renderer info if available (helps identify iOS driver quirks)
+    const dbgExt = webGL.getExtension("WEBGL_debug_renderer_info");
+    if (dbgExt) {
+      try {
+        ext.renderer = webGL.getParameter(dbgExt.UNMASKED_RENDERER_WEBGL);
+        ext.vendor = webGL.getParameter(dbgExt.UNMASKED_VENDOR_WEBGL);
+      } catch (e) {
+        ext.renderer = null;
+        ext.vendor = null;
+      }
+    } else {
+      ext.renderer = null;
+      ext.vendor = null;
+    }
+    
+    // useful capability info
+    ext.maxTextureSize = webGL.getParameter(webGL.MAX_TEXTURE_SIZE);
+
     let halfFloat, halfFloatTexType;
 
     if (isWebGL2) {
+      // request color-buffer float extension (best-effort)
       webGL.getExtension("EXT_color_buffer_float");
-      ext.supportLinearFiltering = webGL.getExtension("OES_texture_float_linear");
+      // WebGL2 implementations expose different extension sets; check for both float & half-float linear support.
+      const floatLinear = !!(webGL.getExtension("OES_texture_float_linear") || webGL.getExtension("EXT_color_buffer_float"));
+      const halfFloatLinear = !!webGL.getExtension("OES_texture_half_float_linear");
       halfFloatTexType = webGL.HALF_FLOAT;
+      var supportLinearFiltering = floatLinear || halfFloatLinear;
     } else {
+      // WebGL1: try to detect either float-linear or half-float-linear extensions
       halfFloat = webGL.getExtension("OES_texture_half_float");
-      ext.supportLinearFiltering = webGL.getExtension("OES_texture_half_float_linear");
+      const halfFloatLinear = !!webGL.getExtension("OES_texture_half_float_linear");
+      const floatLinear = !!webGL.getExtension("OES_texture_float_linear");
       halfFloatTexType = halfFloat ? halfFloat.HALF_FLOAT_OES : null;
+      var supportLinearFiltering = floatLinear || halfFloatLinear;
     }
+
+    ext.supportLinearFiltering = !!supportLinearFiltering;
 
     if (config.TRANSPARENT) {
       webGL.clearColor(0.0, 0.0, 0.0, 0.0);

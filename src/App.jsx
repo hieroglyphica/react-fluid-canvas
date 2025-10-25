@@ -1,23 +1,34 @@
-import FluidSimulation from './index.jsx';
+import FluidSimulation from "./index.jsx";
+// import shared default config
+import { config as defaultConfig } from "./config/simulationConfig";
 
 function App() {
-  // Example of overriding the default configuration
-  const customConfig = {
-    DENSITY_DISSIPATION: 0.99,
-    SPLAT_RADIUS: 0.002,
-    CURL: 10,
-    TRANSPARENT: true,
-    COLOR_THEME:"default", // Cycle between pink and purple hues
-  };
-
+  // App uses shared default config (single source of truth).
+  // Use a fixed, inset container and hide overflow to avoid scrollbars on resize.
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
-      <h1 style={{ position: 'absolute', top: '20px', left: '20px', color: 'white', zIndex: 1 }}>
-        React Fluid Canvas
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        overflow: "hidden",
+        // ensure it sits behind other UI if used as a background
+        zIndex: 0,
+      }}
+    >
+      <h1
+        style={{
+          position: "absolute",
+          top: "20px",
+          left: "20px",
+          color: "white",
+          zIndex: 1,
+        }}
+      >
+        {/* React Fluid Canvas */}
       </h1>
-      <FluidSimulation config={customConfig} />
+      <FluidSimulation config={defaultConfig} />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

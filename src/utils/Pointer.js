@@ -9,6 +9,7 @@ export class Pointer {
     this.deltaY = 0;
     this.down = false;
     this.moved = false;
-    this.color = [30, 0, 300];
+    // default normalized RGB (0..1) sensible starting color (neutral grey)
+    this.color = [0.3, 0.3, 0.3];
   }
 }

@@ -30,7 +30,7 @@ export const colorShader = /* glsl */ `
     }
 `;
 
-/** Moves a quantity (like dye or velocity) through the velocity field, relying on the GPU's built-in linear filtering. */
+/* Advection: supports manual bilinear (bilerp) fallback using texel-center sampling */
 export const advectionShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
@@ -38,16 +38,37 @@ export const advectionShader = /* glsl */ `
     uniform sampler2D uVelocity;
     uniform sampler2D uSource;
     uniform vec2 velocityTexelSize;
+    uniform vec2 sourceTexelSize;
     uniform float dt;
     uniform float dissipation;
+    uniform bool uEnableManualFiltering;
+
+    // bilerp: sample texel centers using floor(...) + 0.5 and use fractional weights
+    vec4 bilerp(sampler2D source, vec2 uv, vec2 texelSize) {
+        vec2 f = fract(uv / texelSize - 0.5);
+        vec2 coord = (floor(uv / texelSize - 0.5) + 0.5) * texelSize;
+
+        vec4 a = texture2D(source, coord);
+        vec4 b = texture2D(source, coord + vec2(texelSize.x, 0.0));
+        vec4 c = texture2D(source, coord + vec2(0.0, texelSize.y));
+        vec4 d = texture2D(source, coord + texelSize);
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
+
     void main () {
-        vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * velocityTexelSize;
-        gl_FragColor = dissipation * texture2D(uSource, coord);
+        vec2 vel = texture2D(uVelocity, vUv).xy;
+        vec2 coord = vUv - dt * vel * velocityTexelSize;
+
+        if (uEnableManualFiltering) {
+            gl_FragColor = dissipation * bilerp(uSource, coord, sourceTexelSize);
+        } else {
+            gl_FragColor = dissipation * texture2D(uSource, coord);
+        }
         gl_FragColor.a = 1.0;
     }
 `;
 
-/** Calculates the divergence of the velocity field. Divergence is the amount of flow leaving a point. */
+/** Divergence shader */
 export const divergenceShader = /* glsl */ `
     precision mediump float;
     precision mediump sampler2D;
@@ -73,7 +94,7 @@ export const divergenceShader = /* glsl */ `
     }
 `;
 
-/** Calculates the curl (or vorticity) of the velocity field. Curl represents the local spinning motion of the fluid. */
+/** Curl */
 export const curlShader = /* glsl */ `
     precision mediump float;
     precision mediump sampler2D;
@@ -94,7 +115,7 @@ export const curlShader = /* glsl */ `
     }
 `;
 
-/** Applies a confinement force based on the curl to add back small-scale details and turbulence lost during simulation steps. */
+/** Vorticity confinement */
 export const vorticityShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
@@ -125,7 +146,7 @@ export const vorticityShader = /* glsl */ `
     }
 `;
 
-/** Iteratively solves for the pressure field using the Jacobi method. Pressure is used to make the velocity field divergence-free. */
+/** Pressure (Jacobi) */
 export const pressureShader = /* glsl */ `
     precision mediump float;
     precision mediump sampler2D;
@@ -152,7 +173,7 @@ export const pressureShader = /* glsl */ `
     }
 `;
 
-/** Subtracts the pressure gradient from the velocity field to make it incompressible (divergence-free). */
+/** Gradient subtract */
 export const gradientSubtractShader = /* glsl */ `
     precision mediump float;
     precision mediump sampler2D;
@@ -179,7 +200,7 @@ export const gradientSubtractShader = /* glsl */ `
     }
 `;
 
-/** Draws a "splat" (a Gaussian-shaped blob) of color or velocity onto a texture at a user-defined point. */
+/** Splat */
 export const splatShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
@@ -191,15 +212,15 @@ export const splatShader = /* glsl */ `
     uniform float radius;
     uniform float brightness;
     void main() {
-    vec2 p = vUv - point.xy;
-    p.x *= aspectRatio;
-    vec3 splat = exp(-dot(p, p) / radius) * color * brightness;
-    vec3 base = texture2D(uTarget, vUv).xyz;
-    gl_FragColor = vec4(base + splat, 1.0);
-}
+        vec2 p = vUv - point.xy;
+        p.x *= aspectRatio;
+        vec3 splat = exp(-dot(p, p) / radius) * color * brightness;
+        vec3 base = texture2D(uTarget, vUv).xyz;
+        gl_FragColor = vec4(base + splat, 1.0);
+    }
 `;
 
-/** Renders the final dye texture to the screen, with options for a background color or transparency. */
+/** Display shader: supports manual bilinear sampling + boost toward center sample */
 export const displayShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
@@ -214,49 +235,58 @@ export const displayShader = /* glsl */ `
     uniform bool uShadingEnabled;
     uniform vec2 dyeTexelSize;
     uniform float uBrightness;
+    uniform bool uManualFilter;
+    uniform float uManualFilterBoost;
 
-    // Screen blend mode
-    vec3 screen(vec3 base, vec3 blend) {
-        return 1.0 - (1.0 - base) * (1.0 - blend);
+    // Manual bilinear sampling helper (bilerp) with optional boost toward center sample
+    vec3 sampleBilinearRGB(sampler2D samp, vec2 uv, vec2 texelSize, float boost) {
+        vec2 f = fract(uv / texelSize - 0.5);
+        vec2 coord = (floor(uv / texelSize - 0.5) + 0.5) * texelSize;
+
+        vec3 a = texture2D(samp, coord).rgb;
+        vec3 b = texture2D(samp, coord + vec2(texelSize.x, 0.0)).rgb;
+        vec3 c = texture2D(samp, coord + vec2(0.0, texelSize.y)).rgb;
+        vec3 d = texture2D(samp, coord + texelSize).rgb;
+        vec3 bil = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+
+        if (boost <= 0.0) return bil;
+        return mix(bil, a, clamp(boost, 0.0, 1.0));
     }
 
-    // ACES Filmic Tone Mapping
-    vec3 aces_tonemap(vec3 x) {
-        const float a = 2.51;
-        const float b = 0.03;
-        const float c = 2.43;
-        const float d = 0.59;
-        const float e = 0.14;
-        return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+    // Catmull-Rom cubic weight + bicubic (kept for optional high-quality path)
+    float cubicWeight(float x) {
+        x = abs(x);
+        if (x <= 1.0) return (1.5 * x - 2.5) * x * x + 1.0;
+        if (x < 2.0) return ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0;
+        return 0.0;
     }
-
-    // HSV/RGB conversion functions
-    vec3 rgb2hsv(vec3 c) {
-        vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-        float d = q.x - min(q.w, q.y);
-        float e = 1.0e-10;
-        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-    }
-
-    vec3 hsv2rgb(vec3 c) {
-        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-    }
-
-    vec3 adjust_color(vec3 color, float brightness, float saturation_boost) {
-        vec3 hsv = rgb2hsv(color);
-        hsv.y = clamp(hsv.y * saturation_boost, 0.0, 1.0); // Boost saturation
-        hsv.z *= brightness; // Apply brightness
-        return hsv2rgb(hsv);
+    vec3 sampleBicubicRGB(sampler2D samp, vec2 uv, vec2 texelSize) {
+        vec2 pixel = uv / texelSize;
+        vec2 base = floor(pixel) - 1.0;
+        vec3 sum = vec3(0.0);
+        float wsum = 0.0;
+        for (int j = 0; j < 4; j++) {
+            for (int i = 0; i < 4; i++) {
+                vec2 p = (base + vec2(float(i), float(j))) * texelSize;
+                vec3 c = texture2D(samp, p).rgb;
+                float wx = cubicWeight(pixel.x - (base.x + float(i)));
+                float wy = cubicWeight(pixel.y - (base.y + float(j)));
+                float w = wx * wy;
+                sum += c * w;
+                wsum += w;
+            }
+        }
+        return sum / (wsum + 1e-6);
     }
 
     void main () {
-        // Clamp the color to prevent NaNs in the gradient calculation
-        vec3 C = clamp(texture2D(uTexture, vUv).rgb, 0.0, 2.0);
-        float a = max(C.r, max(C.g, C.b));
+        vec3 C;
+        if (uManualFilter) {
+            // choose bilinear/manual path (bicubic optional elsewhere)
+            C = clamp(sampleBilinearRGB(uTexture, vUv, dyeTexelSize, uManualFilterBoost), 0.0, 2.0);
+        } else {
+            C = clamp(texture2D(uTexture, vUv).rgb, 0.0, 2.0);
+        }
 
         if (uShadingEnabled) {
             vec3 L = texture2D(uTexture, vUv - vec2(dyeTexelSize.x, 0.0)).rgb;
@@ -267,33 +297,20 @@ export const displayShader = /* glsl */ `
             C = C * (1.0 - gradient * 2.0) + C * 0.2;
         }
 
-        if (uAuraEnabled) {
-           C += texture2D(uAura, vUv).rgb; // Additive blending for a glowing effect
-        }
+        if (uAuraEnabled) C += texture2D(uAura, vUv).rgb;
+        if (uRayAuraEnabled) C += texture2D(uRayAura, vUv).rgb;
 
-        if (uRayAuraEnabled) {
-           C += texture2D(uRayAura, vUv).rgb; // Additive blending for a glowing effect
-          
-        }
-
-        // Adjust brightness and saturation in HSV space for better color fidelity
-        C = adjust_color(C, uBrightness, 1.2); // 1.2 is a gentle saturation boost
-
-        // Apply tone mapping to prevent colors from washing out to white
-        C = aces_tonemap(C);
-
-        // Calculate final alpha after all effects are applied
+        C = clamp(C * uBrightness, 0.0, 1.0);
         float finalAlpha = max(C.r, max(C.g, C.b));
-
-        if (transparent) { // If background is transparent, blend dye with alpha
+        if (transparent) {
             gl_FragColor = vec4(C, finalAlpha);
-        } else { // If background is opaque, mix dye with background color
+        } else {
             gl_FragColor = vec4(mix(backColor, C, finalAlpha), 1.0);
         }
     }
 `;
 
-/** Creates a mask from the bright areas of the dye texture, which is used to generate sunrays. */
+/** Sunrays mask */
 export const sunraysMaskShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
@@ -302,81 +319,40 @@ export const sunraysMaskShader = /* glsl */ `
     void main () {
         vec4 c = texture2D(uTexture, vUv);
         float brightness = max(c.r, max(c.g, c.b));
-        c.a = brightness; // Store brightness in alpha channel
+        c.a = brightness;
         gl_FragColor = c;
     }
 `;
 
-/** Generates a radial blur effect (sunrays) from a light source, using a mask texture. */
+/** Ray aura shader (kept) */
 export const rayAuraShader = /* glsl */ `
     precision highp float;
     precision highp sampler2D;
-
     varying vec2 vUv;
     uniform sampler2D uTexture;
     uniform float weight;
-
     #define ITERATIONS 16
-
-    // HSV/RGB conversion functions needed for iridescence
-    vec3 rgb2hsv(vec3 c) {
-        vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-        float d = q.x - min(q.w, q.y);
-        float e = 1.0e-10;
-        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-    }
-
-    vec3 hsv2rgb(vec3 c) {
-        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-    }
-
-    // Hash function for pseudo-randomness
-    float hash(vec2 p) {
-        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-    }
-
     void main () {
         float Density = 0.3;
         float Decay = 0.97;
         float Exposure = 0.25;
-
         vec2 coord = vUv;
         vec2 dir = vUv - 0.5;
-
         dir *= 1.0 / float(ITERATIONS) * Density;
         float illuminationDecay = 1.0;
-
         vec3 color = vec3(0.0);
-
-        for (int i = 0; i < ITERATIONS; i++)
-        {
+        for (int i = 0; i < ITERATIONS; i++) {
             coord -= dir;
             vec4 tex = texture2D(uTexture, coord);
             float sample = tex.a;
-
-            // Use a hash function to create a shimmering, iridescent effect
-            float random = hash(coord);
-            
-            // Take the original color and shift its hue for iridescence
-            vec3 baseColor = tex.rgb;
-            vec3 hsv = rgb2hsv(baseColor);
-            hsv.x = fract(hsv.x + random * 0.2); // Shift hue
-            vec3 iridescentColor = hsv2rgb(hsv);
-
-            color += iridescentColor * sample * illuminationDecay * weight;
-
+            color += tex.rgb * sample * illuminationDecay * weight;
             illuminationDecay *= Decay;
         }
-
         gl_FragColor = vec4(color * Exposure, 1.0);
     }
 `;
 
-/** Blurs an image in one direction (horizontal or vertical). Used for the AURA glow. */
+/** Blur shader (used for aura) */
 export const blurShader = /* glsl */ `
     precision mediump float;
     precision mediump sampler2D;
@@ -386,15 +362,12 @@ export const blurShader = /* glsl */ `
     uniform float weight;
     void main () {
         vec3 c = texture2D(uTexture, vUv).rgb * 0.2 * weight;
-
-        // 9-tap bilinear filter
         c += texture2D(uTexture, vUv + texelSize * 1.5).rgb * 0.15 * weight;
         c += texture2D(uTexture, vUv - texelSize * 1.5).rgb * 0.15 * weight;
         c += texture2D(uTexture, vUv + texelSize * 3.5).rgb * 0.1 * weight;
         c += texture2D(uTexture, vUv - texelSize * 3.5).rgb * 0.1 * weight;
         c += texture2D(uTexture, vUv + texelSize * 5.5).rgb * 0.05 * weight;
         c += texture2D(uTexture, vUv - texelSize * 5.5).rgb * 0.05 * weight;
-
         gl_FragColor = vec4(c, 1.0);
     }
 `;
@@ -408,5 +381,77 @@ export const copyShader = /* glsl */ `
 
     void main () {
         gl_FragColor = texture2D(uTexture, vUv);
+    }
+`;
+
+/* Downsample shader: maps high-precision dye -> 8-bit dye8 using pixel-center sampling.
+   Expects:
+    - sampler2D uSource
+    - vec2 srcSize (width,height)
+    - vec2 destSize (width,height)
+*/
+export const downsampleShader = /* glsl */ `
+    precision highp float;
+    precision highp sampler2D;
+    varying vec2 vUv;
+    uniform sampler2D uSource;
+    uniform vec2 srcSize;
+    uniform vec2 destSize;
+
+    vec4 sampleBilerp(sampler2D src, vec2 uv, vec2 texelSize) {
+        // use explicit vec2 constants to avoid scalar->vec mixing
+        vec2 f = fract(uv / texelSize - vec2(0.5));
+        vec2 coord = (floor(uv / texelSize - vec2(0.5)) + vec2(0.5)) * texelSize;
+        vec4 a = texture2D(src, coord);
+        vec4 b = texture2D(src, coord + vec2(texelSize.x, 0.0));
+        vec4 c = texture2D(src, coord + vec2(0.0, texelSize.y));
+        vec4 d = texture2D(src, coord + texelSize);
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
+
+    void main() {
+        // Determine integer dest pixel coord for this fragment
+        vec2 p = floor(vUv * destSize);
+        // Map the dest pixel center into source-space uv:
+        // source pixel center (in normalized space) = (p + 0.5) / destSize
+        vec2 srcUV = (p + vec2(0.5)) / destSize;
+        // Convert to source texel size
+        vec2 srcTexel = 1.0 / srcSize;
+        // Sample the source using bilerp (texel-center sampling)
+        vec4 col = sampleBilerp(uSource, srcUV, srcTexel);
+        // Simple clamp/tonemap to avoid blown highlights when converting to 8-bit
+        vec3 mapped = col.rgb / (col.rgb + vec3(1.0));
+        mapped = pow(mapped, vec3(1.0 / 1.1)); // slight gamma
+        gl_FragColor = vec4(clamp(mapped, 0.0, 1.0), 1.0);
+    }
+`;
+
+/* Sharpen shader: simple unsharp mask on the 8-bit intermediate.
+   Expects:
+    - sampler2D uTexture
+    - vec2 texelSize
+    - float amount (0..1)
+*/
+export const sharpenShader = /* glsl */ `
+    precision highp float;
+    precision highp sampler2D;
+    varying vec2 vUv;
+    uniform sampler2D uTexture;
+    uniform vec2 texelSize;
+    uniform float amount;
+
+    void main() {
+        vec3 c = texture2D(uTexture, vUv).rgb;
+        // 4-neighbor blur - initialize as vec3 to avoid scalar->vec assignment
+        vec3 blur = vec3(0.0);
+        blur += texture2D(uTexture, vUv + vec2(texelSize.x, 0.0)).rgb;
+        blur += texture2D(uTexture, vUv - vec2(texelSize.x, 0.0)).rgb;
+        blur += texture2D(uTexture, vUv + vec2(0.0, texelSize.y)).rgb;
+        blur += texture2D(uTexture, vUv - vec2(0.0, texelSize.y)).rgb;
+        blur = blur * 0.25;
+        // unsharp mask
+        vec3 result = c + amount * (c - blur);
+        result = clamp(result, 0.0, 1.0);
+        gl_FragColor = vec4(result, 1.0);
     }
 `;

@@ -1,362 +1,854 @@
 import { WebGLManager } from "../engine/WebGLManager";
 import * as shaders from "../shaders/shaders";
 import { Pointer } from "../utils/Pointer";
+// import canonical defaults so missing keys are filled
+import { config as defaultConfig } from "../config/simulationConfig";
 
 export class FluidSimulation {
-  constructor(canvas, config) {
-    this.canvas = canvas;
-    this.config = { ...config }; // Use a copy
+	constructor(canvas, config) {
+		this.canvas = canvas;
+		// Track which config keys were explicitly provided by the user so presets don't override them.
+		this._explicitConfigKeys = new Set(Object.keys(config || {}));
+		// Merge provided config over canonical defaults so the pipeline always sees a full set of options.
+		this.config = { ...(defaultConfig || {}), ...(config || {}) };
 
-    this.manager = new WebGLManager(canvas, this.config);
-    if (!this.manager.webGL) {
-      throw new Error("WebGL not supported");
-    }
+		// Keep a persistent base splat radius (user-provided or default) so we can scale it on resize.
+		this._baseSplatRadius = Number(this.config.SPLAT_RADIUS) || 0.01;
 
-    this.pointers = [new Pointer()];
-    this.splatStack = [];
+		// Apply initial quality preset if provided in config (may overwrite some user keys)
+		if (this.config.QUALITY) {
+			this.applyQualityPreset(this.config.QUALITY);
+		}
 
-    this.animationFrameId = null;
-    this.lastUpdateTime = Date.now();
+		this.manager = new WebGLManager(canvas, this.config);
+		if (!this.manager.webGL) {
+			throw new Error("WebGL not supported");
+		}
 
-    this.dye = null;
-    this.velocity = null;
-    this.divergence = null;
-    this.curl = null;
-    this.pressure = null;
-    this.aura = null;
-    this.auraTemp = null; // Temporary FBO for multi-pass blur
-    this.auraMask = null;
-    this.rayAura = null;
-    this.rayAuraMask = null;
+		this.pointers = [new Pointer()];
+		this.splatStack = [];
 
-    this._initPrograms();
-    this.initFramebuffers();
-  }
+		this.animationFrameId = null;
+		this.lastUpdateTime = Date.now();
 
-  _initPrograms() {
-    this.programs = {
-      splat: this.manager.createProgram(shaders.baseVertexShader, shaders.splatShader),
-      divergence: this.manager.createProgram(shaders.baseVertexShader, shaders.divergenceShader),
-      curl: this.manager.createProgram(shaders.baseVertexShader, shaders.curlShader),
-      vorticity: this.manager.createProgram(shaders.baseVertexShader, shaders.vorticityShader),
-      pressure: this.manager.createProgram(shaders.baseVertexShader, shaders.pressureShader),
-      gradientSubtract: this.manager.createProgram(shaders.baseVertexShader, shaders.gradientSubtractShader),
-      auraMask: this.manager.createProgram(shaders.baseVertexShader, shaders.sunraysMaskShader), // Can reuse the same mask logic
-      aura: this.manager.createProgram(shaders.baseVertexShader, shaders.blurShader), // Use the new blur shader
-      rayAuraMask: this.manager.createProgram(shaders.baseVertexShader, shaders.sunraysMaskShader),
-      rayAura: this.manager.createProgram(shaders.baseVertexShader, shaders.rayAuraShader),
-      display: this.manager.createProgram(shaders.baseVertexShader, shaders.displayShader),
-      copy: this.manager.createProgram(shaders.baseVertexShader, shaders.copyShader),
-      advection: this.manager.createProgram(shaders.baseVertexShader, shaders.advectionShader),
-    };
-  }
+		this.dye = null;
+		this.velocity = null;
+		this.divergence = null;
+		this.curl = null;
+		this.pressure = null;
+		this.aura = null;
+		this.auraTemp = null; // Temporary FBO for multi-pass blur
+		this.auraMask = null;
+		this.rayAura = null;
+		this.rayAuraMask = null;
 
-  initFramebuffers() {
-    const { webGL, ext: webGLExt } = this.manager;
-    const simWidth = this.config.SIM_RESOLUTION;
-    const simHeight = this.config.SIM_RESOLUTION;
-    const dyeRes = this.config.DYE_RESOLUTION;
+		this._initPrograms();
+		this.initFramebuffers();
 
-    const dyeWidth = dyeRes;
-    const dyeHeight = dyeRes
+		// Validate runtime config to catch accidental dev flags or extreme values before publish.
+		this._validateConfig();
 
-    this.textureWidth = simWidth;
-    this.textureHeight = simHeight;
+		// Detect iOS devices so we can prefer manual filter there when appropriate
+		const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "";
+		// Modern iPadOS can present a "Macintosh" UA; detect by platform + touch support as well.
+		const hasTouchPoints = typeof navigator !== "undefined" && navigator.maxTouchPoints && navigator.maxTouchPoints > 0;
+		this._isIOS =
+		  (/iPad|iPhone|iPod/.test(ua) || (navigator && navigator.platform === "MacIntel" && hasTouchPoints) || (ua.includes("Macintosh") && hasTouchPoints))
+		  && !window.MSStream;
 
-    const texType = webGLExt.halfFloatTexType;
-    const rgba = webGLExt.formatRGBA;
-    const rg = webGLExt.formatRG;
-    const r = webGLExt.formatR;
-    const filtering = webGLExt.supportLinearFiltering ? webGL.LINEAR : webGL.NEAREST;
+		// runtime helpers bound to instance (optional convenience)
+		this.setIOSDprCap = (v) => this.setIOSDPRCap(v);
+		this.enableIOSBicubic = (v) => this.setEnableIOSBicubic(!!v);
 
-    if (this.dye == null || this.dye.width !== dyeWidth || this.dye.height !== dyeHeight) {
-        this.dye = this.manager.createDoubleFBO(dyeWidth, dyeHeight, rgba.internalFormat, rgba.format, texType, filtering);
-    }
+		// Expose dev-only helpers when running in non-production builds so developers
+		// can toggle simulation paths at runtime without shipping a change.
+		const __DEV__ = (typeof process !== "undefined" && process.env && process.env.NODE_ENV !== "production");
+		if (__DEV__) {
+			// Allow toggling the simulated "no float-linear" path in dev builds:
+			this.simulateNoFloatLinear = (v) => this.enableSimulateNoFloatLinear(!!v);
+		}
 
-    this.velocity = this.manager.createDoubleFBO(this.textureWidth, this.textureHeight, rg.internalFormat, rg.format, texType, filtering);
-    this.divergence = this.manager.createFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
-    this.curl = this.manager.createFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
-    this.pressure = this.manager.createDoubleFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
+		// Debug overlay state
+		this.debugOverlay = null;
+		this._lastOverlayUpdate = 0;
+		this._maybeCreateDebugOverlay();
 
-    this.initAuraFramebuffers();
-    this.initRayAuraFramebuffers();
-  }
+		// Log diagnostics
+		try {
+			  // Intentionally keep console.debug-level logging out of production startup.
+			  // Use the debug overlay (if enabled) or inspect getDiagnostics() manually.
+			} catch (e) {
+			  /* ignore */
+			}
+		}
+	// iOS helpers
+	setIOSDPRCap(cap) {
+		this.config.IOS_DPR_CAP = cap == null ? null : Number(cap);
+		if (this._resizeChecker()) this.initFramebuffers();
+	}
 
-  _calcDeltaTime() {
-    const now = Date.now();
-    let dt = (now - this.lastUpdateTime) / 1000;
-    dt = Math.min(dt, 0.016666);
-    this.lastUpdateTime = now;
-    return dt;
-  }
+	enableSimulateNoFloatLinear(enable) {
+		this.config.IOS_SIMULATE_NO_FLOAT_LINEAR = !!enable;
+	}
 
-  _resizeChecker() {
-    const width = this.canvas.clientWidth;
-    const height = this.canvas.clientHeight;
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-      return true;
-    }
-    return false;
-  }
+	setEnableIOSBicubic(enable) {
+		this.config.IOS_ENABLE_BICUBIC_ON_IOS = !!enable;
+	}
 
-  splat(x, y, dx, dy, color) {
-    const { webGL, blit } = this.manager;
-    const splatProgram = this.programs.splat;
+	// Debug overlay helpers (create/destroy/update)
+	_maybeCreateDebugOverlay() {
+	  if (this.config.DEBUG_OVERLAY && !this.debugOverlay) this.createDebugOverlay();
+	  if (!this.config.DEBUG_OVERLAY && this.debugOverlay) this.destroyDebugOverlay();
+	}
 
-    // Splat velocity
-    webGL.viewport(0, 0, this.velocity.width, this.velocity.height);
-    splatProgram.bind();
-    webGL.uniform1i(splatProgram.uniforms.uTarget, this.velocity.read.attach(0));
-    webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.clientWidth / this.canvas.clientHeight);
-    webGL.uniform2f(splatProgram.uniforms.point, x, y);    
-    webGL.uniform3f(splatProgram.uniforms.color, dx, dy, 1.0);
-    webGL.uniform1f(splatProgram.uniforms.brightness, 1.0); // Full brightness for velocity
-    webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS / 5.0);
-    blit(this.velocity.write.fbo);
-    this.velocity.swap();
+	createDebugOverlay() {
+	  if (this.debugOverlay) return;
+	  const parent = this.canvas.parentElement || document.body;
+	  const el = document.createElement("div");
+	  el.style.position = "absolute";
+	  el.style.top = "10px";
+	  el.style.left = "10px";
+	  el.style.zIndex = 9999;
+	  el.style.pointerEvents = "none";
+	  el.style.background = "rgba(0,0,0,0.5)";
+	  el.style.color = "white";
+	  el.style.fontFamily = "monospace";
+	  el.style.fontSize = "12px";
+	  el.style.padding = "6px";
+	  el.style.whiteSpace = "pre";
+	  el.textContent = "debug overlay";
+	  parent.appendChild(el);
+	  this.debugOverlay = el;
+	  this.updateDebugOverlay(true);
+	}
 
-    // Splat dye
-    webGL.viewport(0, 0, this.dye.width, this.dye.height);
-    splatProgram.bind();
-    webGL.uniform1i(splatProgram.uniforms.uTarget, this.dye.read.attach(0));
-    webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.clientWidth / this.canvas.clientHeight);
-    webGL.uniform2f(splatProgram.uniforms.point, x, y);
-    webGL.uniform1f(splatProgram.uniforms.brightness, this.config.AURA ? 0.6 : 1.0); // Slightly increased brightness for dye when aura is active
-    webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS);
-    webGL.uniform3f(splatProgram.uniforms.color, color[0], color[1], color[2]);
-    blit(this.dye.write.fbo);
-    this.dye.swap();
-  }
+	destroyDebugOverlay() {
+	  if (!this.debugOverlay) return;
+	  if (this.debugOverlay.parentElement) this.debugOverlay.parentElement.removeChild(this.debugOverlay);
+	  this.debugOverlay = null;
+	}
 
-  addSplat(pointer) {
-    this.splatStack.push(pointer);
-  }
+	updateDebugOverlay(force = false) {
+	  if (!this.debugOverlay) return;
+	  const now = performance.now();
+	  if (!force && now - this._lastOverlayUpdate < 200) return; // throttle ~5Hz
+	  this._lastOverlayUpdate = now;
+	  const d = this.getDiagnostics();
+	  const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "(no-UA)";
+	  const touchPoints = (typeof navigator !== "undefined" && navigator.maxTouchPoints) ? navigator.maxTouchPoints : 0;
+ 	  // compute actual upscaling if possible
+ 	  const gl = this.manager && this.manager.webGL ? this.manager.webGL : null;
+ 	  const drawW = gl ? gl.drawingBufferWidth : (this.canvas ? this.canvas.width : 0);
+ 	  const drawH = gl ? gl.drawingBufferHeight : (this.canvas ? this.canvas.height : 0);
+ 	  const dyeW = this.dye ? this.dye.width : 0;
+ 	  const dyeH = this.dye ? this.dye.height : 0;
+ 	  const upscaleX = dyeW ? (drawW / dyeW) : 1.0;
+ 	  const upscaleY = dyeH ? (drawH / dyeH) : 1.0;
+ 	  const lines = [
+	    `UA: ${ua}`,
+	    `touchPoints: ${touchPoints}`,
+ 	    `isIOS: ${d.isIOS}`,
+ 	    `manualFilter: ${d.manualFilterActive} (cfg:${d.userIOSFilterConfig})`,
+ 	    `float-linear: ${d.supportLinearFiltering}`,
+ 	    `DISPLAY_TO_RGBA8: ${d.displayToRGBA8}`,
+ 	    `Bicubic: ${d.displayUseBicubic} (iosEnable:${d.iosEnableBicubicOnIOS})`,
+ 	    `canvas: ${d.canvasWidth}x${d.canvasHeight}  backbuffer: ${d.drawingBufferWidth}x${d.drawingBufferHeight}`,
+ 	    `SIM/DYE (cfg): ${d.SIM_RESOLUTION}/${d.DYE_RESOLUTION}`,
+ 	    `Dye buffer: ${dyeW}x${dyeH}  Upscale: x${upscaleX.toFixed(2)},x${upscaleY.toFixed(2)}`,
+ 	    `CURL: ${d.CURL}  BRIGHT: ${d.BRIGHTNESS}`,
+ 	    `QUALITY: ${d.QUALITY}`,
+ 	  ];
+ 	  this.debugOverlay.textContent = lines.join("\n");
+	}
 
-  _updateSplats() {
-    this.splatStack.forEach(pointer => {
-        this.splat(
-            pointer.texcoordX,
-            pointer.texcoordY,
-            pointer.deltaX,
-            pointer.deltaY,
-            pointer.color
-        );
-    });
-    this.splatStack = [];
-  }
+	// Runtime control helpers for the manual bilinear filter (uManualFilter).
+	setManualFilter(value) {
+		this.config.IOS_FILTER = value === undefined ? null : !!value;
+	}
 
-  initAuraFramebuffers() {
-    const { webGL, ext: webGLExt } = this.manager;
-    const res = this.config.AURA_RESOLUTION;
-    const texType = webGLExt.halfFloatTexType;
-    const rgba = webGLExt.formatRGBA;
-    const filtering = webGL.LINEAR;
+	enableManualFilter() {
+		this.config.IOS_FILTER = true;
+	}
 
-    // Create or resize the main aura FBO
-    this.aura = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
-    // Create or resize the temporary FBO for the blur pass
-    this.auraTemp = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
-    // Create or resize the mask FBO
-    this.auraMask = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
-  }
+	disableManualFilter() {
+		this.config.IOS_FILTER = false;
+	}
 
-  _applyAura(source, mask, destination) {
-    const { webGL, blit } = this.manager;
-    const { auraMask: maskProgram, aura: blurProgram } = this.programs;
+	toggleManualFilter() {
+		const cur = this.config.IOS_FILTER;
+		if (cur === null || cur === undefined) this.config.IOS_FILTER = true;
+		else if (cur === true) this.config.IOS_FILTER = false;
+		else this.config.IOS_FILTER = null;
+	}
 
-    // 1. Create the mask from the dye texture
-    maskProgram.bind();
-    webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
-    webGL.viewport(0, 0, mask.width, mask.height);
-    blit(mask.fbo);
+	getManualFilterState() {
+		return this.config.IOS_FILTER === undefined ? null : this.config.IOS_FILTER;
+	}
 
-    // 2. Horizontal blur pass
-    blurProgram.bind();
-    webGL.uniform1f(blurProgram.uniforms.weight, this.config.AURA_WEIGHT);
-    webGL.uniform2f(blurProgram.uniforms.texelSize, 1.0 / mask.width, 0.0);
-    webGL.uniform1i(blurProgram.uniforms.uTexture, mask.attach(0));
-    blit(this.auraTemp.fbo); // Blur from mask to temp
+	_initPrograms() {
+		this.programs = {
+			splat: this.manager.createProgram(shaders.baseVertexShader, shaders.splatShader),
+			divergence: this.manager.createProgram(shaders.baseVertexShader, shaders.divergenceShader),
+			curl: this.manager.createProgram(shaders.baseVertexShader, shaders.curlShader),
+			vorticity: this.manager.createProgram(shaders.baseVertexShader, shaders.vorticityShader),
+			pressure: this.manager.createProgram(shaders.baseVertexShader, shaders.pressureShader),
+			gradientSubtract: this.manager.createProgram(shaders.baseVertexShader, shaders.gradientSubtractShader),
+			auraMask: this.manager.createProgram(shaders.baseVertexShader, shaders.sunraysMaskShader),
+			aura: this.manager.createProgram(shaders.baseVertexShader, shaders.blurShader),
+			rayAuraMask: this.manager.createProgram(shaders.baseVertexShader, shaders.sunraysMaskShader),
+			rayAura: this.manager.createProgram(shaders.baseVertexShader, shaders.rayAuraShader),
+			display: this.manager.createProgram(shaders.baseVertexShader, shaders.displayShader),
+			copy: this.manager.createProgram(shaders.baseVertexShader, shaders.copyShader),
+			sharpen: this.manager.createProgram(shaders.baseVertexShader, shaders.sharpenShader),
+			downsample: this.manager.createProgram(shaders.baseVertexShader, shaders.downsampleShader),
+			advection: this.manager.createProgram(shaders.baseVertexShader, shaders.advectionShader),
+		};
+	}
 
-    // 3. Vertical blur pass
-    webGL.uniform2f(blurProgram.uniforms.texelSize, 0.0, 1.0 / mask.height);
-    webGL.uniform1i(blurProgram.uniforms.uTexture, this.auraTemp.attach(0));
-    blit(destination.fbo);
-  }
+	// Apply a named quality preset ("low" | "medium" | "high" | "ultra").
+	// Previously only set config keys when undefined; this change allows presets to increase
+	// resolution/iterations/curl (so "high" actually increases dye resolution) while keeping
+	// existing explicit higher user values intact. SPLAT_RADIUS prefers the smaller (finer) value.
+	applyQualityPreset(preset) {
+		const P = String(preset || "").toLowerCase();
+		const presets = {
+			low: {
+				SIM_RESOLUTION: 64,
+				DYE_RESOLUTION: 512,
+				PRESSURE_ITERATIONS: 8,
+				CURL: 0.5,
+				SPLAT_RADIUS: 0.004,
+			},
+			medium: {
+				SIM_RESOLUTION: 128,
+				DYE_RESOLUTION: 1024,
+				PRESSURE_ITERATIONS: 20,
+				CURL: 2.0,
+				SPLAT_RADIUS: 0.0025,
+			},
+			high: {
+				SIM_RESOLUTION: 256,
+				DYE_RESOLUTION: 2048,
+				PRESSURE_ITERATIONS: 32,
+				CURL: 6.0,
+				SPLAT_RADIUS: 0.0018,
+			},
+			ultra: {
+				SIM_RESOLUTION: 256,
+				DYE_RESOLUTION: 4096,
+				PRESSURE_ITERATIONS: 48,
+				CURL: 10.0,
+				SPLAT_RADIUS: 0.0012,
+			},
+		};
 
-  initRayAuraFramebuffers() {
-    const { webGL, ext: webGLExt } = this.manager;
-    const res = this.config.RAY_AURA_RESOLUTION;
-    const texType = webGLExt.halfFloatTexType;
-    const rgba = webGLExt.formatRGBA;
-    const filtering = webGL.LINEAR;
+		const chosen = presets[P] || presets.medium;
 
-    this.rayAura = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
-    this.rayAuraMask = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
-  }
+		// For parameters where higher values improve quality, adopt the preset if it increases the current value.
+		// However, if the user explicitly provided SIM_RESOLUTION or DYE_RESOLUTION, respect their choice.
+		const increaseKeys = ["SIM_RESOLUTION", "DYE_RESOLUTION", "PRESSURE_ITERATIONS", "CURL"];
+		for (const key of increaseKeys) {
+			// Respect explicit user choice for SIM/DYE
+			if ((key === "SIM_RESOLUTION" || key === "DYE_RESOLUTION") && this._explicitConfigKeys.has(key)) {
+				// skip preset-driven increase for values the user explicitly set
+				continue;
+			}
+			const cur = Number(this.config[key] || 0);
+			const want = Number(chosen[key] || 0);
+			if (this.config[key] === undefined || want > cur) {
+				this.config[key] = want;
+			}
+		}
 
-  _applyRayAura(source, mask, destination) {
-    const { webGL, blit } = this.manager;
-    const { rayAuraMask: maskProgram, rayAura: auraProgram } = this.programs;
+		// For splat radius prefer the smaller (finer) value for higher quality
+		if (this.config.SPLAT_RADIUS === undefined) {
+			this.config.SPLAT_RADIUS = chosen.SPLAT_RADIUS;
+		} else {
+			const curRadius = Number(this.config.SPLAT_RADIUS);
+			const presetRadius = Number(chosen.SPLAT_RADIUS);
+			if (presetRadius < curRadius) this.config.SPLAT_RADIUS = presetRadius;
+		}
 
-    webGL.disable(webGL.BLEND);
-    maskProgram.bind();
-    webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
-    webGL.viewport(0, 0, mask.width, mask.height);
-    blit(mask.fbo);
+		this.config.QUALITY = P || "medium";
+	}
 
-    auraProgram.bind();
-    webGL.uniform1f(auraProgram.uniforms.weight, this.config.RAY_AURA_WEIGHT);
-    webGL.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
-    webGL.viewport(0, 0, destination.width, destination.height);
-    blit(destination.fbo);
-  }
+	initFramebuffers() {
+		const { webGL, ext: webGLExt } = this.manager;
+		const simWidth = this.config.SIM_RESOLUTION;
+		const simHeight = this.config.SIM_RESOLUTION;
+		const dyeRes = this.config.DYE_RESOLUTION;
+		// If AUTO_DYE_RESOLUTION is enabled, prefer a dye size based on canvas backing (but don't exceed configured maximum)
+		// Use canvas.width (backing pixels) when available; otherwise fall back to configured dyeRes.
+		const backingW = this.canvas && this.canvas.width ? this.canvas.width : null;
+		const backingH = this.canvas && this.canvas.height ? this.canvas.height : null;
+		let dyeWidth = this.config.AUTO_DYE_RESOLUTION && backingW ? Math.max(128, Math.min(dyeRes, backingW)) : dyeRes;
+		let dyeHeight = this.config.AUTO_DYE_RESOLUTION && backingH ? Math.max(128, Math.min(dyeRes, backingH)) : dyeRes;
 
-  _update(dt) {
-    const { webGL, blit } = this.manager;
-    const {
-        curl: curlProgram,
-        vorticity: vorticityProgram,
-        divergence: divergenceProgram,
-        advection: advectionProgram,
-        pressure: pressureProgram,
-        gradientSubtract: gradientSubtractProgram,
-        display: displayProgram,
-    } = this.programs;
+		// Avoid extremely large upscaling (e.g. dye 128 -> display 2160 => blocky pixels).
+		// If the computed dye size would be upscaled beyond MAX_DYE_UPSCALE, increase the dye size
+		// (up to the configured DYE_RESOLUTION) so final upscale <= MAX_DYE_UPSCALE.
+		// Default cap if not provided: 3.0
+		const maxUpscale = Number(this.config.MAX_DYE_UPSCALE || 3.0);
+		// Prefer using the actual drawing buffer size if available
+		const drawW = (webGL && webGL.drawingBufferWidth) ? webGL.drawingBufferWidth : (this.canvas ? this.canvas.width : null);
+		const drawH = (webGL && webGL.drawingBufferHeight) ? webGL.drawingBufferHeight : (this.canvas ? this.canvas.height : null);
+		if (drawW && dyeWidth) {
+		  const upscaleX = drawW / Math.max(1, dyeWidth);
+		  if (upscaleX > maxUpscale) {
+		    // Target dye width so drawW / target <= maxUpscale -> target >= drawW / maxUpscale
+		    const targetW = Math.min(dyeRes, Math.max(128, Math.floor(drawW / maxUpscale)));
+		    dyeWidth = targetW;
+		  }
+		}
+		if (drawH && dyeHeight) {
+		  const upscaleY = drawH / Math.max(1, dyeHeight);
+		  if (upscaleY > maxUpscale) {
+		    const targetH = Math.min(dyeRes, Math.max(128, Math.floor(drawH / maxUpscale)));
+		    dyeHeight = targetH;
+		  }
+		}
 
-    webGL.viewport(0, 0, this.textureWidth, this.textureHeight);
-    advectionProgram.bind();
-    webGL.uniform2f(advectionProgram.uniforms.velocityTexelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(advectionProgram.uniforms.uVelocity, this.velocity.read.attach(0));
-    webGL.uniform1i(advectionProgram.uniforms.uSource, this.velocity.read.attach(0)); // Advect velocity through itself
-    webGL.uniform1f(advectionProgram.uniforms.dt, dt);
-    webGL.uniform1f(advectionProgram.uniforms.dissipation, this.config.VELOCITY_DISSIPATION);
-    blit(this.velocity.write.fbo);
-    this.velocity.swap();
+		this.textureWidth = simWidth;
+		this.textureHeight = simHeight;
 
-    curlProgram.bind();
-    webGL.uniform2f(curlProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(curlProgram.uniforms.uVelocity, this.velocity.read.attach(0));
-    blit(this.curl.fbo);
+		const texType = webGLExt.halfFloatTexType;
+		const rgba = webGLExt.formatRGBA;
+		const rg = webGLExt.formatRG;
+		const r = webGLExt.formatR;
+		const filtering = webGLExt.supportLinearFiltering ? webGL.LINEAR : webGL.NEAREST;
 
-    vorticityProgram.bind();
-    webGL.uniform2f(vorticityProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(vorticityProgram.uniforms.uVelocity, this.velocity.read.attach(0));
-    webGL.uniform1i(vorticityProgram.uniforms.uCurl, this.curl.attach(1));
-    webGL.uniform1f(vorticityProgram.uniforms.curl, this.config.CURL);
-    webGL.uniform1f(vorticityProgram.uniforms.dt, dt);
-    blit(this.velocity.write.fbo);
+		if (this.dye == null || this.dye.width !== dyeWidth || this.dye.height !== dyeHeight) {
+			this.dye = this.manager.createDoubleFBO(dyeWidth, dyeHeight, rgba.internalFormat, rgba.format, texType, filtering);
+		}
 
-    this.velocity.swap();
+		// DISPLAY_TO_RGBA8 intermediate
+		if (this.config.DISPLAY_TO_RGBA8) {
+			const displayInternal = webGL.RGBA8 ? webGL.RGBA8 : webGL.RGBA;
+			const displayFormat = webGL.RGBA;
+			const displayType = webGL.UNSIGNED_BYTE;
+			const displayWidth = (webGL && webGL.drawingBufferWidth) ? webGL.drawingBufferWidth : dyeWidth;
+			const displayHeight = (webGL && webGL.drawingBufferHeight) ? webGL.drawingBufferHeight : dyeHeight;
+			if (!this.display8 || this.display8.width !== displayWidth || this.display8.height !== displayHeight) {
+				this.display8 = this.manager.createFBO(displayWidth, displayHeight, displayInternal, displayFormat, displayType, webGL.LINEAR);
+			}
+			// Create an 8-bit copy of the dye (same size as display) used when HW float-linear is unavailable.
+			// This is the buffer we downsample the half-float dye into, then the display shader reads from it.
+			if (!this.dye8 || this.dye8.width !== displayWidth || this.dye8.height !== displayHeight) {
+				this.dye8 = this.manager.createFBO(displayWidth, displayHeight, displayInternal, displayFormat, displayType, webGL.LINEAR);
+			}
+		} else {
+			this.display8 = null;
+			this.dye8 = null;
+		}
 
-    divergenceProgram.bind();
-    webGL.uniform2f(divergenceProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(divergenceProgram.uniforms.uVelocity, this.velocity.read.attach(0));
-    blit(this.divergence.fbo);
+		this.velocity = this.manager.createDoubleFBO(this.textureWidth, this.textureHeight, rg.internalFormat, rg.format, texType, filtering);
+		this.divergence = this.manager.createFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
+		this.curl = this.manager.createFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
+		this.pressure = this.manager.createDoubleFBO(this.textureWidth, this.textureHeight, r.internalFormat, r.format, texType, webGL.NEAREST);
 
-    pressureProgram.bind();
-    webGL.uniform2f(pressureProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(pressureProgram.uniforms.uDivergence, this.divergence.attach(0));
-    for (let i = 0; i < this.config.PRESSURE_ITERATIONS; i++) {
-      webGL.uniform1i(pressureProgram.uniforms.uPressure, this.pressure.read.attach(1));
-      blit(this.pressure.write.fbo);
-      this.pressure.swap();
-    }
+		this.initAuraFramebuffers();
+		this.initRayAuraFramebuffers();
+	}
 
-    gradientSubtractProgram.bind();
-    webGL.uniform2f(gradientSubtractProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(gradientSubtractProgram.uniforms.uPressure, this.pressure.read.attach(0));
-    webGL.uniform1i(gradientSubtractProgram.uniforms.uVelocity, this.velocity.read.attach(1));
-    blit(this.velocity.write.fbo);
-    this.velocity.swap();
-    
-    webGL.viewport(0, 0, this.dye.width, this.dye.height);
-    advectionProgram.bind();
-    webGL.uniform2f(advectionProgram.uniforms.velocityTexelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
-    webGL.uniform1i(advectionProgram.uniforms.uVelocity, this.velocity.read.attach(0));
-    webGL.uniform1i(advectionProgram.uniforms.uSource, this.dye.read.attach(1)); // Advect dye through the velocity field
-    webGL.uniform1f(advectionProgram.uniforms.dt, dt);
-    webGL.uniform1f(advectionProgram.uniforms.dissipation, this.config.DENSITY_DISSIPATION);
-    blit(this.dye.write.fbo);
-    this.dye.swap();
+	_calcDeltaTime() {
+		const now = Date.now();
+		let dt = (now - this.lastUpdateTime) / 1000;
+		dt = Math.min(dt, 0.016666);
+		this.lastUpdateTime = now;
+		return dt;
+	}
 
-    // Post-processing
-    if (this.config.AURA) {
-        this._applyAura(this.dye, this.auraMask, this.aura);
-    }
+	_resizeChecker() {
+		const cssWidth = this.canvas.clientWidth;
+		const cssHeight = this.canvas.clientHeight;
+		const globalDpr = window.devicePixelRatio || 1;
+		const cap = (this._isIOS && this.config.IOS_DPR_CAP != null) ? this.config.IOS_DPR_CAP : 2;
+		const dpr = Math.min(globalDpr, cap);
+		const newWidth = Math.max(1, Math.floor(cssWidth * dpr));
+		const newHeight = Math.max(1, Math.floor(cssHeight * dpr));
 
-    if (this.config.RAY_AURA) {
-        this._applyRayAura(this.dye, this.rayAuraMask, this.rayAura);
-    }
+		if (this.canvas.width !== newWidth || this.canvas.height !== newHeight) {
+			this.canvas.width = newWidth;
+			this.canvas.height = newHeight;
+			this.canvas.style.width = cssWidth + "px";
+			this.canvas.style.height = cssHeight + "px";
+			return true;
+		}
+		return false;
+	}
 
-    // Render to canvas
-    webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
-    displayProgram.bind();
-    webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye.read.attach(0));
-    webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1)); // Pass the aura texture
-    webGL.uniform1i(displayProgram.uniforms.uShadingEnabled, this.config.SHADING);
-    webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye.width, 1.0 / this.dye.height);
-    webGL.uniform1i(displayProgram.uniforms.transparent, this.config.TRANSPARENT);
-    webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
-    webGL.uniform1f(displayProgram.uniforms.uBrightness, this.config.BRIGHTNESS);
-    webGL.uniform1i(displayProgram.uniforms.uRayAuraEnabled, this.config.RAY_AURA);
-    webGL.uniform1i(displayProgram.uniforms.uRayAura, this.rayAura.attach(2));
-    webGL.uniform3f(
-      displayProgram.uniforms.backColor,
-      this.config.BACK_COLOR.r / 255.0,
-      this.config.BACK_COLOR.g / 255.0,
-      this.config.BACK_COLOR.b / 255.0
-    );
-    blit(null);
-  }
+	splat(x, y, dx, dy, color) {
+		const { webGL, blit } = this.manager;
+		const splatProgram = this.programs.splat;
 
-  _tick() {
-    const dt = this._calcDeltaTime();
-    if (this._resizeChecker()) {
-      this.initFramebuffers();
-    }
+		const resolutionScale = 128.0 / Math.max(1, this.textureWidth);
 
-    this._updateSplats();
-    this._update(dt);
-    this.animationFrameId = requestAnimationFrame(() => this._tick());
-  }
+		// velocity
+		webGL.viewport(0, 0, this.velocity.width, this.velocity.height);
+		splatProgram.bind();
+		webGL.uniform1i(splatProgram.uniforms.uTarget, this.velocity.read.attach(0));
+		webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.width / Math.max(1, this.canvas.height));
+		webGL.uniform2f(splatProgram.uniforms.point, x, y);
+		webGL.uniform3f(splatProgram.uniforms.color, dx, dy, 1.0);
+		webGL.uniform1f(splatProgram.uniforms.brightness, 1.0);
+		webGL.uniform1f(splatProgram.uniforms.radius, (this.config.SPLAT_RADIUS * resolutionScale) / 5.0);
+		blit(this.velocity.write.fbo);
+		this.velocity.swap();
 
-  run() {
-    if (!this.animationFrameId) {
-      this._tick();
-    }
-  }
+		// dye
+		webGL.viewport(0, 0, this.dye.width, this.dye.height);
+		splatProgram.bind();
+		webGL.uniform1i(splatProgram.uniforms.uTarget, this.dye.read.attach(0));
+		webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.width / Math.max(1, this.canvas.height));
+		webGL.uniform2f(splatProgram.uniforms.point, x, y);
+		webGL.uniform1f(splatProgram.uniforms.brightness, this.config.AURA ? 0.6 : 1.0);
+		webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS * resolutionScale);
+		webGL.uniform3f(splatProgram.uniforms.color, color[0], color[1], color[2]);
+		blit(this.dye.write.fbo);
+		this.dye.swap();
+	}
 
-  stop() {
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-  }
+	addSplat(pointer) {
+		this.splatStack.push(pointer);
+	}
 
-  multipleSplats(amount) {
-    for (let i = 0; i < amount; i++) {
-      const color = [
-        Math.random() * 0.3 + 0.1,
-        Math.random() * 0.3 + 0.1,
-        Math.random() * 0.3 + 0.1,
-      ];
-      const x = Math.random();
-      const y = Math.random();
-      const dx = 10 * (Math.random() - 0.5);
-      const dy = 10 * (Math.random() - 0.5);
-      this.splat(x, y, dx, dy, color);
-    }
-  }
+	_updateSplats() {
+		this.splatStack.forEach(pointer => {
+			this.splat(pointer.texcoordX, pointer.texcoordY, pointer.deltaX, pointer.deltaY, pointer.color);
+		});
+		this.splatStack = [];
+	}
 
-  updateConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig };
-    if (newConfig.AURA !== undefined || newConfig.AURA_RESOLUTION !== undefined) {
-        this.initAuraFramebuffers();
-    }
-    if (newConfig.RAY_AURA !== undefined || newConfig.RAY_AURA_RESOLUTION !== undefined) {
-        this.initRayAuraFramebuffers();
-    }
-  }
-}
+	initAuraFramebuffers() {
+		const { webGL, ext: webGLExt } = this.manager;
+		const res = this.config.AURA_RESOLUTION;
+		const texType = webGLExt.halfFloatTexType;
+		const rgba = webGLExt.formatRGBA;
+		const filtering = webGL.LINEAR;
+
+		this.aura = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
+		this.auraTemp = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
+		this.auraMask = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
+	}
+
+	_applyAura(source, mask, destination) {
+		const { webGL, blit } = this.manager;
+		const { auraMask: maskProgram, aura: blurProgram } = this.programs;
+
+		maskProgram.bind();
+		webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
+		webGL.viewport(0, 0, mask.width, mask.height);
+		blit(mask.fbo);
+
+		blurProgram.bind();
+		webGL.uniform1f(blurProgram.uniforms.weight, this.config.AURA_WEIGHT);
+		webGL.uniform2f(blurProgram.uniforms.texelSize, 1.0 / mask.width, 0.0);
+		webGL.uniform1i(blurProgram.uniforms.uTexture, mask.attach(0));
+		blit(this.auraTemp.fbo);
+
+		webGL.uniform2f(blurProgram.uniforms.texelSize, 0.0, 1.0 / mask.height);
+		webGL.uniform1i(blurProgram.uniforms.uTexture, this.auraTemp.attach(0));
+		blit(destination.fbo);
+	}
+
+	initRayAuraFramebuffers() {
+		const { webGL, ext: webGLExt } = this.manager;
+		const res = this.config.RAY_AURA_RESOLUTION;
+		const texType = webGLExt.halfFloatTexType;
+		const rgba = webGLExt.formatRGBA;
+		const filtering = webGL.LINEAR;
+
+		this.rayAura = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
+		this.rayAuraMask = this.manager.createFBO(res, res, rgba.internalFormat, rgba.format, texType, filtering);
+	}
+
+	_applyRayAura(source, mask, destination) {
+		const { webGL, blit } = this.manager;
+		const { rayAuraMask: maskProgram, rayAura: auraProgram } = this.programs;
+
+		webGL.disable(webgl.BLEND);
+		maskProgram.bind();
+		webgl.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
+		webgl.viewport(0, 0, mask.width, mask.height);
+		blit(mask.fbo);
+
+		auraProgram.bind();
+		webgl.uniform1f(auraProgram.uniforms.weight, this.config.RAY_AURA_WEIGHT);
+		webgl.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
+		webgl.viewport(0, 0, destination.width, destination.height);
+		blit(destination.fbo);
+	}
+
+	_update(dt) {
+		const { webGL, blit } = this.manager;
+		const {
+			curl: curlProgram,
+			vorticity: vorticityProgram,
+			divergence: divergenceProgram,
+			advection: advectionProgram,
+			pressure: pressureProgram,
+			gradientSubtract: gradientSubtractProgram,
+			display: displayProgram,
+			copy: copyProgram,
+			downsample: downsampleProgram,
+			sharpen: sharpenProgram,
+		} = this.programs;
+
+		const curlScale = 128.0 / Math.max(1, this.textureWidth);
+		const effectiveCurl = (this.config.CURL || 0.0) * curlScale;
+
+		// Decide whether to use manual bilinear filtering (uManualFilter):
+	    // - If config.IOS_FILTER === true  => force manual filter
+	    // - If config.IOS_FILTER === false => never use manual filter
+	    // - If config.IOS_FILTER == null/undefined => auto: use manual only when HW float-linear is NOT supported
+	    let manualFilterFlag = 0;
+	    if (this.config.IOS_FILTER === true) {
+	      // explicit user override: force manual filtering
+	      manualFilterFlag = 1;
+	    } else if (this.config.IOS_FILTER === false) {
+	      // explicit user override: disable manual filtering
+	      manualFilterFlag = 0;
+	    } else {
+	      // auto: prefer hardware float/half-float linear filtering when available.
+	      // Only fall back to manual when the runtime reports no support (or when simulated).
+	      const hwSupportsLinear = !!(this.manager.ext && this.manager.ext.supportLinearFiltering);
+	      const simulateNoFloat = !!this.config.IOS_SIMULATE_NO_FLOAT_LINEAR;
+	      const effectiveSupportsLinear = simulateNoFloat ? false : hwSupportsLinear;
+	      manualFilterFlag = effectiveSupportsLinear ? 0 : 1;
+	    }
+
+		// velocity advection
+		webGL.viewport(0, 0, this.textureWidth, this.textureHeight);
+		advectionProgram.bind();
+		if (advectionProgram.uniforms.uManualFilter) webGL.uniform1i(advectionProgram.uniforms.uManualFilter, manualFilterFlag);
+		webGL.uniform2f(advectionProgram.uniforms.velocityTexelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(advectionProgram.uniforms.uVelocity, this.velocity.read.attach(0));
+		webGL.uniform1i(advectionProgram.uniforms.uSource, this.velocity.read.attach(0));
+		webGL.uniform1f(advectionProgram.uniforms.dt, dt);
+		webGL.uniform1f(advectionProgram.uniforms.dissipation, this.config.VELOCITY_DISSIPATION);
+		blit(this.velocity.write.fbo);
+		this.velocity.swap();
+
+		curlProgram.bind();
+		webGL.uniform2f(curlProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(curlProgram.uniforms.uVelocity, this.velocity.read.attach(0));
+		blit(this.curl.fbo);
+
+		vorticityProgram.bind();
+		webGL.uniform2f(vorticityProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(vorticityProgram.uniforms.uVelocity, this.velocity.read.attach(0));
+		webGL.uniform1i(vorticityProgram.uniforms.uCurl, this.curl.attach(1));
+		webGL.uniform1f(vorticityProgram.uniforms.curl, effectiveCurl);
+		webGL.uniform1f(vorticityProgram.uniforms.dt, dt);
+		blit(this.velocity.write.fbo);
+
+		this.velocity.swap();
+
+		divergenceProgram.bind();
+		webGL.uniform2f(divergenceProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(divergenceProgram.uniforms.uVelocity, this.velocity.read.attach(0));
+		blit(this.divergence.fbo);
+
+		pressureProgram.bind();
+		webGL.uniform2f(pressureProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(pressureProgram.uniforms.uDivergence, this.divergence.attach(0));
+		for (let i = 0; i < this.config.PRESSURE_ITERATIONS; i++) {
+			webGL.uniform1i(pressureProgram.uniforms.uPressure, this.pressure.read.attach(1));
+			blit(this.pressure.write.fbo);
+			this.pressure.swap();
+		}
+
+		gradientSubtractProgram.bind();
+		webGL.uniform2f(gradientSubtractProgram.uniforms.texelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(gradientSubtractProgram.uniforms.uPressure, this.pressure.read.attach(0));
+		webGL.uniform1i(gradientSubtractProgram.uniforms.uVelocity, this.velocity.read.attach(1));
+		blit(this.velocity.write.fbo);
+		this.velocity.swap();
+		
+		webGL.viewport(0, 0, this.dye.width, this.dye.height);
+		advectionProgram.bind();
+		webGL.uniform2f(advectionProgram.uniforms.velocityTexelSize, 1.0 / this.textureWidth, 1.0 / this.textureHeight);
+		webGL.uniform1i(advectionProgram.uniforms.uVelocity, this.velocity.read.attach(0));
+		webGL.uniform1i(advectionProgram.uniforms.uSource, this.dye.read.attach(1)); // Advect dye through the velocity field
+		webGL.uniform1f(advectionProgram.uniforms.dt, dt);
+		webGL.uniform1f(advectionProgram.uniforms.dissipation, this.config.DENSITY_DISSIPATION);
+		blit(this.dye.write.fbo);
+		this.dye.swap();
+
+		// Post-processing
+		if (this.config.AURA) {
+			this._applyAura(this.dye, this.auraMask, this.aura);
+		}
+
+		if (this.config.RAY_AURA) {
+			this._applyRayAura(this.dye, this.rayAuraMask, this.rayAura);
+		}
+
+		// Compute upscaling factors between dye texture and final drawing buffer
+		const drawW = webGL.drawingBufferWidth || (this.canvas && this.canvas.width) || 1;
+		const drawH = webGL.drawingBufferHeight || (this.canvas && this.canvas.height) || 1;
+		const upscaleX = drawW / Math.max(1, this.dye.width);
+		const upscaleY = drawH / Math.max(1, this.dye.height);
+		const isUpscaling = (upscaleX > 1.01) || (upscaleY > 1.01); // small tolerance
+
+		if (this.config.DISPLAY_TO_RGBA8 && this.display8) {
+		  // compute whether we need to downsample dye to 8-bit first (no float-linear)
+		  const needDownsampleTo8 = !this.manager.ext.supportLinearFiltering && this.dye8;
+		  const wantNearestFinal = !!this.config.FINAL_NEAREST_UPSCALE;
+
+		  if (needDownsampleTo8 && downsampleProgram) {
+		    // 0) downsample half-float dye -> dye8 using pixel-center sampling (nearest-style)
+		    webGL.viewport(0, 0, this.dye8.width, this.dye8.height);
+		    downsampleProgram.bind();
+		    if (downsampleProgram.uniforms.uSource) webGL.uniform1i(downsampleProgram.uniforms.uSource, this.dye.read.attach(0));
+		    if (downsampleProgram.uniforms.destSize) webGL.uniform2f(downsampleProgram.uniforms.destSize, this.dye8.width, this.dye8.height);
+		    blit(this.dye8.fbo);
+		  }
+
+		  // 1) render the display shader into the 8-bit intermediate (tone-mapped / converted)
+		  webGL.viewport(0, 0, this.display8.width, this.display8.height);
+		  displayProgram.bind();
+
+		  // When using dye8 (downsampled) or forcing nearest final upscale, bypass tonemapping & saturation
+		  const bypassTonemap = !!(needDownsampleTo8 || wantNearestFinal);
+		  if (displayProgram.uniforms.uBypassTonemap) webGL.uniform1i(displayProgram.uniforms.uBypassTonemap, bypassTonemap ? 1 : 0);
+
+		  // If we downsampled into an 8-bit dye (dye8), make the display shader sample that texture
+		  // using dye8's texel size and disable manual/bicubic sampling (hardware linear for u8 is fine).
+		  if (needDownsampleTo8 && this.dye8) {
+		    if (displayProgram.uniforms.uManualFilter) webGL.uniform1i(displayProgram.uniforms.uManualFilter, 0);
+		    if (displayProgram.uniforms.uUseBicubic) webGL.uniform1i(displayProgram.uniforms.uUseBicubic, 0);
+		    if (displayProgram.uniforms.uTexture) webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye8.attach(0));
+		    if (displayProgram.uniforms.dyeTexelSize) webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye8.width, 1.0 / this.dye8.height);
+		  } else {
+		    if (displayProgram.uniforms.uManualFilter) webGL.uniform1i(displayProgram.uniforms.uManualFilter, manualFilterFlag);
+		    // decide bicubic normally only for half-float sampling path
+		    if (displayProgram.uniforms.uUseBicubic) {
+		      const bicubicGlobal = !!this.config.DISPLAY_USE_BICUBIC;
+		      const bicubicOnIOS = !!this.config.IOS_ENABLE_BICUBIC_ON_IOS;
+		      const upscaleOnly = !!this.config.DISPLAY_USE_BICUBIC_UPSCALE_ONLY;
+		      const bicubicAllowed = bicubicGlobal || (this._isIOS && bicubicOnIOS);
+		      const useBicubic = manualFilterFlag && bicubicAllowed && (!upscaleOnly || isUpscaling);
+		      webGL.uniform1i(displayProgram.uniforms.uUseBicubic, useBicubic ? 1 : 0);
+		    }
+		    if (displayProgram.uniforms.uTexture) webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye.read.attach(0));
+		    if (displayProgram.uniforms.dyeTexelSize) webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye.width, 1.0 / this.dye.height);
+		  }
+		  if (displayProgram.uniforms.uAura) webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1));
+		  if (displayProgram.uniforms.uShadingEnabled) webGL.uniform1i(displayProgram.uniforms.uShadingEnabled, this.config.SHADING);
+ 		  if (displayProgram.uniforms.transparent) webGL.uniform1i(displayProgram.uniforms.transparent, this.config.TRANSPARENT);
+ 		  if (displayProgram.uniforms.uAuraEnabled) webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
+ 		  if (displayProgram.uniforms.uBrightness) webGL.uniform1f(displayProgram.uniforms.uBrightness, this.config.BRIGHTNESS);
+ 		  if (displayProgram.uniforms.uRayAuraEnabled) webGL.uniform1i(displayProgram.uniforms.uRayAuraEnabled, this.config.RAY_AURA);
+ 		  if (displayProgram.uniforms.uRayAura) webGL.uniform1i(displayProgram.uniforms.uRayAura, this.rayAura.attach(2));
+ 		  if (displayProgram.uniforms.backColor) webGL.uniform3f(displayProgram.uniforms.backColor, this.config.BACK_COLOR.r / 255.0, this.config.BACK_COLOR.g / 255.0, this.config.BACK_COLOR.b / 255.0);
+ 		  blit(this.display8.fbo);
+
+		  // 2) final blit: draw the 8-bit texture to canvas — hardware linear filtering available for u8 textures
+		  webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
+
+	      // Optionally force nearest sampling for the final upscale (crisper / aliased look).
+	      // (reuse wantNearestFinal defined earlier in this scope)
+	      let prevBoundTex = null;
+	      if (wantNearestFinal && this.display8 && this.display8.texture) {
+	        prevBoundTex = this.display8.texture;
+	        webGL.bindTexture(webGL.TEXTURE_2D, this.display8.texture);
+	        webGL.texParameteri(webGL.TEXTURE_2D, webGL.TEXTURE_MIN_FILTER, webGL.NEAREST);
+	        webGL.texParameteri(webGL.TEXTURE_2D, webGL.TEXTURE_MAG_FILTER, webGL.NEAREST);
+	      }
+
+	      // prefer sharpen pass if configured & HW float-linear is missing
+	      const needSharpen = !this.manager.ext.supportLinearFiltering && (this.config.IOS_SHARPEN_AMOUNT && this.config.IOS_SHARPEN_AMOUNT > 0);
+	      if (needSharpen && sharpenProgram) {
+	        sharpenProgram.bind();
+	        if (sharpenProgram.uniforms.uTexture) webGL.uniform1i(sharpenProgram.uniforms.uTexture, this.display8.attach(0));
+	        if (sharpenProgram.uniforms.texelSize) webGL.uniform2f(sharpenProgram.uniforms.texelSize, 1.0 / this.display8.width, 1.0 / this.display8.height);
+	        if (sharpenProgram.uniforms.amount) webGL.uniform1f(sharpenProgram.uniforms.amount, Number(this.config.IOS_SHARPEN_AMOUNT) || 0.18);
+	        blit(null);
+	      } else {
+	        copyProgram.bind();
+	        if (copyProgram.uniforms.uTexture) webGL.uniform1i(copyProgram.uniforms.uTexture, this.display8.attach(0));
+	        blit(null);
+	      }
+
+	      // Restore linear filtering if we temporarily switched to NEAREST.
+	      if (wantNearestFinal && this.display8 && this.display8.texture) {
+	        webGL.bindTexture(webGL.TEXTURE_2D, this.display8.texture);
+	        webGL.texParameteri(webGL.TEXTURE_2D, webGL.TEXTURE_MIN_FILTER, webGL.LINEAR);
+	        webGL.texParameteri(webGL.TEXTURE_2D, webGL.TEXTURE_MAG_FILTER, webGL.LINEAR);
+	        webGL.bindTexture(webGL.TEXTURE_2D, null);
+	      }
+		} else {
+		  // fallback: render directly to canvas
+		  webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
+		  displayProgram.bind();
+		  if (displayProgram.uniforms.uManualFilter) webGL.uniform1i(displayProgram.uniforms.uManualFilter, manualFilterFlag);
+		  if (displayProgram.uniforms.uUseBicubic) {
+			const bicubicGlobal = !!this.config.DISPLAY_USE_BICUBIC;
+			const bicubicOnIOS = !!this.config.IOS_ENABLE_BICUBIC_ON_IOS;
+			const upscaleOnly = !!this.config.DISPLAY_USE_BICUBIC_UPSCALE_ONLY;
+			const bicubicAllowed = bicubicGlobal || (this._isIOS && bicubicOnIOS);
+			const useBicubic = manualFilterFlag && bicubicAllowed && (!upscaleOnly || isUpscaling);
+			webGL.uniform1i(displayProgram.uniforms.uUseBicubic, useBicubic ? 1 : 0);
+	      }
+	      webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye.read.attach(0));
+	      webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1));
+	      webGL.uniform1i(displayProgram.uniforms.uShadingEnabled, this.config.SHADING);
+	      webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye.width, 1.0 / this.dye.height);
+	      webGL.uniform1i(displayProgram.uniforms.transparent, this.config.TRANSPARENT);
+	      webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
+	      webGL.uniform1f(displayProgram.uniforms.uBrightness, this.config.BRIGHTNESS);
+	      webGL.uniform1i(displayProgram.uniforms.uRayAuraEnabled, this.config.RAY_AURA);
+	      webGL.uniform1i(displayProgram.uniforms.uRayAura, this.rayAura.attach(2));
+	      webGL.uniform3f(
+			displayProgram.uniforms.backColor,
+			this.config.BACK_COLOR.r / 255.0,
+			this.config.BACK_COLOR.g / 255.0,
+			this.config.BACK_COLOR.b / 255.0
+	      );
+	      blit(null);
+	    }
+	}
+
+	_tick() {
+		const dt = this._calcDeltaTime();
+		if (this._resizeChecker()) {
+			this.initFramebuffers();
+		}
+
+		this._updateSplats();
+		this._update(dt);
+		if (this.config.DEBUG_OVERLAY) this.updateDebugOverlay();
+		this.animationFrameId = requestAnimationFrame(() => this._tick());
+	}
+
+	run() {
+		if (!this.animationFrameId) {
+			this._tick();
+		}
+	}
+
+	stop() {
+		if (this.animationFrameId) {
+			cancelAnimationFrame(this.animationFrameId);
+			this.animationFrameId = null;
+		}
+	}
+
+	multipleSplats(amount) {
+		for (let i = 0; i < amount; i++) {
+			const color = [
+				Math.random() * 0.3 + 0.1,
+				Math.random() * 0.3 + 0.1,
+				Math.random() * 0.3 + 0.1,
+			];
+			const x = Math.random();
+			const y = Math.random();
+			const dx = 10 * (Math.random() - 0.5);
+			const dy = 10 * (Math.random() - 0.5);
+			this.splat(x, y, dx, dy, color);
+		}
+	}
+
+	updateConfig(newConfig) {
+		const prev = { ...this.config };
+		this.config = { ...this.config, ...newConfig };
+
+		if (newConfig.DEBUG_OVERLAY !== undefined && newConfig.DEBUG_OVERLAY !== prev.DEBUG_OVERLAY) {
+		  this._maybeCreateDebugOverlay();
+		}
+
+		if (newConfig.QUALITY !== undefined && newConfig.QUALITY !== prev.QUALITY) {
+			this.applyQualityPreset(newConfig.QUALITY);
+			this.initFramebuffers();
+		}
+
+		if (newConfig.IOS_DPR_CAP !== undefined && newConfig.IOS_DPR_CAP !== prev.IOS_DPR_CAP) {
+			if (this._resizeChecker()) this.initFramebuffers();
+		}
+
+		if (newConfig.AURA !== undefined || newConfig.AURA_RESOLUTION !== undefined) {
+			 this.initAuraFramebuffers();
+		}
+		if (newConfig.RAY_AURA !== undefined || newConfig.RAY_AURA_RESOLUTION !== undefined) {
+			 this.initRayAuraFramebuffers();
+		}
+
+		if (this.config.DEBUG_OVERLAY) this.updateDebugOverlay(true);
+	}
+
+	// Diagnostic helper
+	getDiagnostics() {
+	  const ext = this.manager && this.manager.ext ? this.manager.ext : {};
+	  const webgl = this.manager && this.manager.webGL ? this.manager.webGL : null;
+	  const hwSupportsLinear = !!(ext && ext.supportLinearFiltering);
+	  const simulateNoFloat = !!this.config.IOS_SIMULATE_NO_FLOAT_LINEAR;
+	  const effectiveSupportsLinear = simulateNoFloat ? false : hwSupportsLinear;
+	  // Match runtime auto logic: if IOS_FILTER undefined -> use manual ONLY when HW float-linear is NOT supported.
+	  const manualAuto = (this.config.IOS_FILTER === true) ? true
+	    : (this.config.IOS_FILTER === false) ? false
+	    : (!effectiveSupportsLinear);
+
+	  const usedDye8 = !!(this.dye8 && !effectiveSupportsLinear); // true when we downsampled for display
+ 	  // Provide stable numeric values for overlay (avoid null/undefined -> NaN)
+ 	  const drawingBufferWidth = webgl && webgl.drawingBufferWidth ? webgl.drawingBufferWidth : 0;
+ 	  const drawingBufferHeight = webgl && webgl.drawingBufferHeight ? webgl.drawingBufferHeight : 0;
+ 	  const dyeWidth = this.dye ? this.dye.width : 0;
+ 	  const dyeHeight = this.dye ? this.dye.height : 0;
+
+ 	  return {
+ 	    isIOS: !!this._isIOS,
+ 	    userAgent: (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : null,
+ 	    maxTouchPoints: (typeof navigator !== "undefined" && navigator.maxTouchPoints) ? navigator.maxTouchPoints : 0,
+ 	    userIOSFilterConfig: this.config.IOS_FILTER,
+ 	    manualFilterActive: !!manualAuto,
+ 	    displayToRGBA8: !!this.config.DISPLAY_TO_RGBA8,
+ 	    usedDye8,
+ 	    displayUseBicubic: !!this.config.DISPLAY_USE_BICUBIC,
+ 	    iosEnableBicubicOnIOS: !!this.config.IOS_ENABLE_BICUBIC_ON_IOS,
+ 	    iosSimulateNoFloatLinear: !!this.config.IOS_SIMULATE_NO_FLOAT_LINEAR,
+ 	    iosDprCap: this.config.IOS_DPR_CAP,
+ 	    isWebGL2: !!(ext && ext.isWebGL2),
+ 	    renderer: ext ? ext.renderer : null,
+ 	    vendor: ext ? ext.vendor : null,
+ 	    maxTextureSize: ext ? ext.maxTextureSize : null,
+ 	    supportLinearFiltering: !!(ext && ext.supportLinearFiltering),
+ 	    formatRGBA: ext && ext.formatRGBA ? ext.formatRGBA.internalFormat : null,
+ 	    formatRG: ext && ext.formatRG ? ext.formatRG.internalFormat : null,
+ 	    formatR: ext && ext.formatR ? ext.formatR.internalFormat : null,
+ 	    canvasWidth: this.canvas ? this.canvas.width : 0,
+ 	    canvasHeight: this.canvas ? this.canvas.height : 0,
+ 	    drawingBufferWidth,
+ 	    drawingBufferHeight,
+ 	    dyeWidth,
+ 	    dyeHeight,
+ 	    SIM_RESOLUTION: this.config.SIM_RESOLUTION,
+ 	    DYE_RESOLUTION: this.config.DYE_RESOLUTION,
+ 	    CURL: this.config.CURL,
+ 	    BRIGHTNESS: this.config.BRIGHTNESS,
+ 	    QUALITY: this.config.QUALITY,
+	  };
+	}
+
+	// Lightweight sanity checks and production-safety warnings.
+	_validateConfig() {
+		try {
+			const isProd = (typeof process !== "undefined" && process.env && process.env.NODE_ENV === "production");
+			// Warn if a developer-only simulation flag is enabled in production build
+			if (isProd && this.config.IOS_SIMULATE_NO_FLOAT_LINEAR) {
+				console.warn("FluidSimulation: IOS_SIMULATE_NO_FLOAT_LINEAR is enabled in a production build. Ensure this is intentional.");
+			}
+			// Warn if DEBUG_OVERLAY left enabled in production (optional)
+			if (isProd && this.config.DEBUG_OVERLAY) {
+				console.info("FluidSimulation: DEBUG_OVERLAY is enabled. You may want to disable it for production builds.");
+			}
+			// Sanity: dye resolution shouldn't exceed device max texture size
+			const maxTex = this.manager && this.manager.ext ? this.manager.ext.maxTextureSize : null;
+			if (maxTex && this.config.DYE_RESOLUTION && this.config.DYE_RESOLUTION > maxTex) {
+				console.warn(`FluidSimulation: DYE_RESOLUTION (${this.config.DYE_RESOLUTION}) exceeds device max texture size (${maxTex}). Consider lowering it.`);
+			}
+		} catch (e) {
+			/* fail silently if env isn't available */
+		}
+	}
+ }

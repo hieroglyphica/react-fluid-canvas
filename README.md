@@ -1,86 +1,44 @@
 # React Fluid Canvas
 
-A lightweight and performant React component for creating beautiful, interactive fluid simulations on a canvas using WebGL. Perfect for animated backgrounds, headers, or creative interactive elements.
+A lightweight GPU-powered fluid simulation component for React. Uses WebGL shaders for simulation and rendering with optional post-processing (bloom, rays) and iOS-friendly fallbacks.
 
-![React Fluid Canvas Demo](https://raw.githubusercontent.com/hieroglyphica/react-fluid-canvas/main/docs/assets/demo.gif)
+Demo: see repository or packaged demo page.
 
-**[Live Demo](https://temporal-codex.web.app/fluid)**
+Quickstart
+- npm install react-fluid-canvas
+- Import and mount the component; it fills its parent container.
 
-## Features
-
-- **High Performance**: Offloads all simulation and rendering to the GPU with WebGL shaders.
-- **Interactive**: Responds to mouse and touch movements.
-- **Highly Customizable**: Easily tweak simulation parameters like dissipation, curl, splat radius, colors, and more.
-- **Special Effects**: Includes optional post-processing effects like bloom (Aura) and glow rays (Ray Aura).
-- **Easy to Use**: Drop the `<FluidSimulation />` component into your React app and customize with props.
-- **Lightweight**: Minimal dependencies.
-
-## Installation
-
-```bash
-npm install react-fluid-canvas
-# or
-yarn add react-fluid-canvas
-```
-
-## Usage
-
-Import the component and place it in your application. It will automatically fill its parent container.
-
+Usage
 ```jsx
 import FluidSimulation from "react-fluid-canvas";
+// optional: import a shared config (single source of truth)
+import { config as defaultConfig } from "./config/simulationConfig";
 
 function App() {
   return (
     <div style={{ width: "100vw", height: "100vh" }}>
-      <FluidSimulation />
+      <FluidSimulation config={defaultConfig} />
     </div>
   );
 }
 ```
 
-### Customization
+Configuration and defaults
+- All runtime configuration lives in `src/config/simulationConfig.js`. Edit that file to change defaults for the packaged component.
+- You may still pass a `config` prop to override defaults per instance.
 
-You can override the default simulation settings by passing a `config` object prop.
+New and notable options
+- DISPLAY_TO_RGBA8 — Render to an 8-bit intermediate (useful on iOS to leverage HW filtering).
+- IOS_SHARPEN_AMOUNT — Small unsharp-mask applied when using 8-bit fallback.
+- DISPLAY_USE_BICUBIC / DISPLAY_USE_BICUBIC_UPSCALE_ONLY — Optional higher-quality resampling for final display.
+- AUTO_DYE_RESOLUTION / MAX_DYE_UPSCALE — Avoid extreme upscaling artifacts by sizing dye buffers sensibly.
 
-```jsx
-import FluidSimulation from "react-fluid-canvas";
+See CONFIGURATION.md below for a full table of options (description, allowed ranges, and defaults).
 
-function MyComponent() {
-  const customConfig = {
-    DENSITY_DISSIPATION: 0.98,
-    VELOCITY_DISSIPATION: 0.99,
-    PRESSURE_ITERATIONS: 25,
-    CURL: 30,
-    SPLAT_RADIUS: 0.005,
-    COLOR_THEME: [0.8, 0.9], // Cycle between pink and purple hues
-    AURA: true,
-    AURA_WEIGHT: 3.0,
-  };
+Notes
+- The component auto-detects WebGL capabilities; on devices lacking float-linear support it will use the configured fallback path.
+- A runtime debug overlay is available but disabled by default; enable it by setting `DEBUG_OVERLAY: true` in src/config/simulationConfig.js to inspect renderer and config diagnostics.
+- Developer/testing flags (for example `IOS_SIMULATE_NO_FLOAT_LINEAR`) remain available for debugging purposes but are OFF by default in the shipped config.
+- The repo includes shaders and a small debug overlay to help diagnose platform-specific rendering problems.
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        zIndex: -1,
-      }}
-    >
-      <FluidSimulation config={customConfig} />
-    </div>
-  );
-}
-```
-
-For a full list of available configuration options, please see the [**`CONFIGURATION.md`**](./CONFIGURATION.md) file.
-
-## Acknowledgements
-
-This project is inspired by and based on the concepts from Pavel Dobryakov's excellent [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation)
-
-## License
-
-MIT
+License: MIT
