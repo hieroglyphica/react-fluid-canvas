@@ -1,7 +1,7 @@
 {
   "name": "react-fluid-canvas",
   "private": false,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "main": "./dist/react-fluid-canvas.umd.cjs",
   "module": "./dist/react-fluid-canvas.js",
@@ -32,10 +32,10 @@
     "eslint-plugin-react": "^7.34.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
-    "vite": "^5.2.0",
-    "vite-plugin-dts": "^4.5.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "vite": "^5.2.0",
+    "vite-plugin-dts": "^4.5.4"
   },
   "peerDependencies": {
     "react": "^18.2.0",
