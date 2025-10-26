@@ -383,30 +383,34 @@ export class FluidSimulation {
 
 		const resolutionScale = 128.0 / Math.max(1, this.textureWidth);
 
-		// velocity
+		// Use backing-store (pixel) aspect like Pavel: keep splats circular in screen pixels.
+		const backingAspect = (this.canvas.width && this.canvas.height) ? (this.canvas.width / Math.max(1, this.canvas.height)) : 1.0;
+
+		// Splat velocity (target = velocity FBO).
 		webGL.viewport(0, 0, this.velocity.width, this.velocity.height);
 		splatProgram.bind();
 		webGL.uniform1i(splatProgram.uniforms.uTarget, this.velocity.read.attach(0));
-		webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.width / Math.max(1, this.canvas.height));
-		webGL.uniform2f(splatProgram.uniforms.point, x, y);
-		webGL.uniform3f(splatProgram.uniforms.color, dx, dy, 1.0);
-		webGL.uniform1f(splatProgram.uniforms.brightness, 1.0);
-		webGL.uniform1f(splatProgram.uniforms.radius, (this.config.SPLAT_RADIUS * resolutionScale) / 5.0);
-		blit(this.velocity.write.fbo);
-		this.velocity.swap();
+		webGL.uniform1f(splatProgram.uniforms.aspectRatio, backingAspect);
+		webGL.uniform2f(splatProgram.uniforms.point, x, y);    
+ 		webGL.uniform3f(splatProgram.uniforms.color, dx, dy, 1.0);
+ 		webGL.uniform1f(splatProgram.uniforms.brightness, 1.0); // Full brightness for velocity
+ 		webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS / 5.0);
+ 		blit(this.velocity.write.fbo);
+ 		this.velocity.swap();
 
-		// dye
-		webGL.viewport(0, 0, this.dye.width, this.dye.height);
-		splatProgram.bind();
-		webGL.uniform1i(splatProgram.uniforms.uTarget, this.dye.read.attach(0));
-		webGL.uniform1f(splatProgram.uniforms.aspectRatio, this.canvas.width / Math.max(1, this.canvas.height));
-		webGL.uniform2f(splatProgram.uniforms.point, x, y);
-		webGL.uniform1f(splatProgram.uniforms.brightness, this.config.AURA ? 0.6 : 1.0);
-		webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS * resolutionScale);
-		webGL.uniform3f(splatProgram.uniforms.color, color[0], color[1], color[2]);
-		blit(this.dye.write.fbo);
-		this.dye.swap();
-	}
+ 		// Splat dye
+ 		webGL.viewport(0, 0, this.dye.width, this.dye.height);
+ 		splatProgram.bind();
+ 		webGL.uniform1i(splatProgram.uniforms.uTarget, this.dye.read.attach(0));
+		// use same backing-store aspect so dye splat matches velocity splat appearance on screen
+		webGL.uniform1f(splatProgram.uniforms.aspectRatio, backingAspect);
+ 		webGL.uniform2f(splatProgram.uniforms.point, x, y);
+ 		webGL.uniform1f(splatProgram.uniforms.brightness, this.config.AURA ? 0.6 : 1.0); // Slightly increased brightness for dye when aura is active
+ 		webGL.uniform1f(splatProgram.uniforms.radius, this.config.SPLAT_RADIUS);
+ 		webGL.uniform3f(splatProgram.uniforms.color, color[0], color[1], color[2]);
+ 		blit(this.dye.write.fbo);
+ 		this.dye.swap();
+ 	}
 
 	addSplat(pointer) {
 		this.splatStack.push(pointer);
@@ -466,16 +470,17 @@ export class FluidSimulation {
 		const { webGL, blit } = this.manager;
 		const { rayAuraMask: maskProgram, rayAura: auraProgram } = this.programs;
 
-		webGL.disable(webgl.BLEND);
+		// Use the correct GL reference (webGL) and guard uniform usage.
+		webGL.disable(webGL.BLEND);
 		maskProgram.bind();
-		webgl.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
-		webgl.viewport(0, 0, mask.width, mask.height);
+		if (maskProgram.uniforms.uTexture) webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
+		webGL.viewport(0, 0, mask.width, mask.height);
 		blit(mask.fbo);
 
 		auraProgram.bind();
-		webgl.uniform1f(auraProgram.uniforms.weight, this.config.RAY_AURA_WEIGHT);
-		webgl.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
-		webgl.viewport(0, 0, destination.width, destination.height);
+		if (auraProgram.uniforms.weight) webGL.uniform1f(auraProgram.uniforms.weight, Number(this.config.RAY_AURA_WEIGHT) || 0.5);
+		if (auraProgram.uniforms.uTexture) webGL.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
+		webGL.viewport(0, 0, destination.width, destination.height);
 		blit(destination.fbo);
 	}
 
@@ -751,22 +756,22 @@ export class FluidSimulation {
 	}
 
 	updateConfig(newConfig) {
-		const prev = { ...this.config };
-		this.config = { ...this.config, ...newConfig };
+			const prev = { ...this.config };
+			this.config = { ...this.config, ...newConfig };
 
-		if (newConfig.DEBUG_OVERLAY !== undefined && newConfig.DEBUG_OVERLAY !== prev.DEBUG_OVERLAY) {
-		  this._maybeCreateDebugOverlay();
-		}
+			if (newConfig.DEBUG_OVERLAY !== undefined && newConfig.DEBUG_OVERLAY !== prev.DEBUG_OVERLAY) {
+			  this._maybeCreateDebugOverlay();
+			}
 
-		if (newConfig.QUALITY !== undefined && newConfig.QUALITY !== prev.QUALITY) {
-			this.applyQualityPreset(newConfig.QUALITY);
-			this.initFramebuffers();
-		}
+			if (newConfig.QUALITY !== undefined && newConfig.QUALITY !== prev.QUALITY) {
+				this.applyQualityPreset(newConfig.QUALITY);
+				this.initFramebuffers();
+			}
 
-		if (newConfig.IOS_DPR_CAP !== undefined && newConfig.IOS_DPR_CAP !== prev.IOS_DPR_CAP) {
-			if (this._resizeChecker()) this.initFramebuffers();
-		}
-
+			if (newConfig.IOS_DPR_CAP !== undefined && newConfig.IOS_DPR_CAP !== prev.IOS_DPR_CAP) {
+				if (this._resizeChecker()) this.initFramebuffers();
+			}
+    
 		if (newConfig.AURA !== undefined || newConfig.AURA_RESOLUTION !== undefined) {
 			 this.initAuraFramebuffers();
 		}

@@ -24,7 +24,8 @@ function App() {
 ```
 
 Configuration and defaults
-- All runtime configuration lives in `src/config/simulationConfig.js`. Edit that file to change defaults for the packaged component.
+- Primary, human-readable option reference: [CONFIGURATION.md](./CONFIGURATION.md)
+- Canonical runtime defaults (source of truth): `src/config/simulationConfig.js` — open or edit this file to change shipped defaults. (link: [src/config/simulationConfig.js](./src/config/simulationConfig.js))
 - You may still pass a `config` prop to override defaults per instance.
 
 New and notable options
@@ -37,8 +38,12 @@ See CONFIGURATION.md below for a full table of options (description, allowed ran
 
 Notes
 - The component auto-detects WebGL capabilities; on devices lacking float-linear support it will use the configured fallback path.
-- A runtime debug overlay is available but disabled by default; enable it by setting `DEBUG_OVERLAY: true` in src/config/simulationConfig.js to inspect renderer and config diagnostics.
+- A runtime debug overlay is available but disabled by default; enable it by setting `DEBUG_OVERLAY: true` in `src/config/simulationConfig.js` to inspect renderer and config diagnostics.
 - Developer/testing flags (for example `IOS_SIMULATE_NO_FLOAT_LINEAR`) remain available for debugging purposes but are OFF by default in the shipped config.
 - The repo includes shaders and a small debug overlay to help diagnose platform-specific rendering problems.
+
+Status
+- Last updated: 2025-10 (matches current code in repo).
+- The README is concise and covers installation, usage, and where to change defaults. Consider adding a short screenshot and a link to a live demo for improved onboarding.
 
 License: MIT
