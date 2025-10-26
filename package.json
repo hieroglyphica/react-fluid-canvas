@@ -2,6 +2,10 @@
   "name": "react-fluid-canvas",
   "private": false,
   "version": "0.1.12",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hieroglyphica/react-fluid-canvas.git"
+  },
   "type": "module",
   "main": "./dist/react-fluid-canvas.umd.cjs",
   "module": "./dist/react-fluid-canvas.js",

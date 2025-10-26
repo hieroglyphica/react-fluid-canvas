@@ -2,13 +2,14 @@
 
 A lightweight GPU-powered fluid simulation component for React using WebGL shaders with optional post-processing (bloom, rays) and iOS-friendly fallbacks.
 
-<p align="center">
-  <img src="./docs/assets/demo.gif" alt="React Fluid Canvas demo" style="max-width:100%; height:auto; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.6)" />
-</p>
+![React Fluid Canvas Demo](https://raw.githubusercontent.com/hieroglyphica/react-fluid-canvas/main/docs/assets/demo.gif)
 
 [![npm version](https://img.shields.io/npm/v/react-fluid-canvas.svg)](https://www.npmjs.com/package/react-fluid-canvas)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![build manual](https://img.shields.io/badge/build-manual-yellow.svg)](#)
+[![GitHub](https://img.shields.io/badge/GitHub-hieroglyphica/react-fluid-canvas-black?logo=github)](https://github.com/hieroglyphica/react-fluid-canvas)
+
+Repository: https://github.com/hieroglyphica/react-fluid-canvas
 
 Table of Contents
 - Quickstart
@@ -53,8 +54,8 @@ function App() {
 ```
 Notes
 - Canonical defaults live at: `src/config/simulationConfig.js`
-- Human-readable option reference: `CONFIGURATION.md`
-- Runtime changelog: `CHANGELOG.md`
+- Human-readable option reference: [CONFIGURATION.md](./CONFIGURATION.md)
+- Runtime changelog: [CHANGELOG.md](./CHANGELOG.md)
 
 Highlights
 - Hardware-accelerated fluid simulation with optional bloom (AURA) and volumetric rays (RAY_AURA).
@@ -62,6 +63,7 @@ Highlights
 - Fine-grained runtime config via the `config` prop or by editing `src/config/simulationConfig.js`.
 
 Status
+- Package version: 0.1.12
 - Last updated: 2025-10-26.
 - Live demo: https://temporal-codex.web.app/fluid
 - Demo GIF included at: `docs/assets/demo.gif` (this folder is included in published packages).
