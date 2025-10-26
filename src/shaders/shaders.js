@@ -41,7 +41,7 @@ export const advectionShader = /* glsl */ `
     uniform vec2 sourceTexelSize;
     uniform float dt;
     uniform float dissipation;
-    uniform bool uEnableManualFiltering;
+    uniform bool uManualFilter;
 
     // bilerp: sample texel centers using floor(...) + 0.5 and use fractional weights
     vec4 bilerp(sampler2D source, vec2 uv, vec2 texelSize) {
@@ -59,7 +59,7 @@ export const advectionShader = /* glsl */ `
         vec2 vel = texture2D(uVelocity, vUv).xy;
         vec2 coord = vUv - dt * vel * velocityTexelSize;
 
-        if (uEnableManualFiltering) {
+        if (uManualFilter) {
             gl_FragColor = dissipation * bilerp(uSource, coord, sourceTexelSize);
         } else {
             gl_FragColor = dissipation * texture2D(uSource, coord);

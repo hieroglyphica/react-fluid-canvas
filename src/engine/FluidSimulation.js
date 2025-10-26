@@ -470,18 +470,31 @@ export class FluidSimulation {
 		const { webGL, blit } = this.manager;
 		const { rayAuraMask: maskProgram, rayAura: auraProgram } = this.programs;
 
-		// Use the correct GL reference (webGL) and guard uniform usage.
+		// Save/restore BLEND state and use the correct GL reference (webGL).
+		const prevBlend = webGL.isEnabled ? webGL.isEnabled(webGL.BLEND) : true;
 		webGL.disable(webGL.BLEND);
+
 		maskProgram.bind();
-		if (maskProgram.uniforms.uTexture) webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
+		if (maskProgram.uniforms && maskProgram.uniforms.uTexture) {
+			webGL.uniform1i(maskProgram.uniforms.uTexture, source.read.attach(0));
+		}
 		webGL.viewport(0, 0, mask.width, mask.height);
 		blit(mask.fbo);
 
 		auraProgram.bind();
-		if (auraProgram.uniforms.weight) webGL.uniform1f(auraProgram.uniforms.weight, Number(this.config.RAY_AURA_WEIGHT) || 0.5);
-		if (auraProgram.uniforms.uTexture) webGL.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
+		if (auraProgram.uniforms && auraProgram.uniforms.weight) {
+			webGL.uniform1f(auraProgram.uniforms.weight, Number(this.config.RAY_AURA_WEIGHT) || 0.5);
+		}
+		if (auraProgram.uniforms && auraProgram.uniforms.uTexture) {
+			webGL.uniform1i(auraProgram.uniforms.uTexture, mask.attach(0));
+		}
 		webGL.viewport(0, 0, destination.width, destination.height);
 		blit(destination.fbo);
+
+		// restore BLEND state if possible
+		try {
+			if (typeof webGL.enable === "function" && prevBlend) webGL.enable(webGL.BLEND);
+		} catch (e) { /* ignore restore errors */ }
 	}
 
 	_update(dt) {

@@ -64,11 +64,6 @@ export const useFluidSimulation = (canvasRef, config) => {
       const sim = simulationRef.current;
       if (!sim) return;
       try {
-        // Log pre-layout window size
-        if (typeof window !== "undefined") {
-          console.log("resize: pre-layout window.innerWidth=", window.innerWidth, "innerHeight=", window.innerHeight);
-        }
-
         const parent = canvas.parentElement || document.body;
         // force reflow
         // eslint-disable-next-line no-unused-expressions
@@ -81,7 +76,6 @@ export const useFluidSimulation = (canvasRef, config) => {
               // Read parent rect first (more likely to be updated by layout changes)
               const parentRect = parent.getBoundingClientRect();
               const canvasRect = canvas.getBoundingClientRect();
-              console.log("resize: parentRect ->", parentRect, " canvasRect ->", canvasRect);
 
               // Prefer parent rect when it looks updated; fall back to canvas rect
               const cssWidth = (parentRect && parentRect.width && parentRect.width > 0) ? parentRect.width : (canvasRect && canvasRect.width ? canvasRect.width : canvas.clientWidth);
@@ -90,13 +84,11 @@ export const useFluidSimulation = (canvasRef, config) => {
               // Apply CSS size to canvas to ensure its CSS size follows the parent (helps avoid stale DOMRect)
               canvas.style.width = Math.max(1, Math.floor(cssWidth)) + "px";
               canvas.style.height = Math.max(1, Math.floor(cssHeight)) + "px";
-              console.log("resize: applied canvas.style width/height ->", canvas.style.width, canvas.style.height);
 
               // Now let the simulation update backing store if needed
               const changed = sim._resizeChecker && sim._resizeChecker();
               if (changed) sim.initFramebuffers();
 
-              console.log("resize: cssWidth=", cssWidth);
               if (typeof cssWidth === "number" && cssWidth > 0 && typeof sim.adjustSplatForSize === "function") {
                 sim.adjustSplatForSize(cssWidth);
               }
