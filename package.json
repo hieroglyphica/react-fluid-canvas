@@ -26,6 +26,7 @@
     "dev": "vite",
     "prepublishOnly": "npm run build",
     "build": "vite build",
+    "version": "node scripts/version.js && git add CHANGELOG.md README.md",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview"

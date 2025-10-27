@@ -8,9 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Added an automated `version` script to update documentation on publish.
+
+## [0.1.14] - 2024-10-28
+
+### Changed
 - Upgraded all project dependencies to their latest versions, including support for **React 19**.
 - Added `Dependabot` to automate future dependency updates.
 - Corrected ESLint configuration to properly handle unused variables in `catch` blocks.
+- Corrected Vite build configuration to resolve library build warnings.
 
 ## [0.1.13] - 2024-10-27
 

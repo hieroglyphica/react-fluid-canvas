@@ -57,4 +57,13 @@ export default [
       },
     },
   },
+  {
+    // Lint scripts in the scripts/ directory
+    files: ['scripts/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 ]
