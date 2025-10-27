@@ -82,7 +82,7 @@ export class WebGLManager {
       try {
         ext.renderer = webGL.getParameter(dbgExt.UNMASKED_RENDERER_WEBGL);
         ext.vendor = webGL.getParameter(dbgExt.UNMASKED_VENDOR_WEBGL);
-      } catch (e) {
+      } catch (_e) {
         ext.renderer = null;
         ext.vendor = null;
       }
@@ -95,6 +95,7 @@ export class WebGLManager {
     ext.maxTextureSize = webGL.getParameter(webGL.MAX_TEXTURE_SIZE);
 
     let halfFloat, halfFloatTexType;
+    let supportLinearFiltering;
 
     if (isWebGL2) {
       // request color-buffer float extension (best-effort)
@@ -103,14 +104,14 @@ export class WebGLManager {
       const floatLinear = !!(webGL.getExtension("OES_texture_float_linear") || webGL.getExtension("EXT_color_buffer_float"));
       const halfFloatLinear = !!webGL.getExtension("OES_texture_half_float_linear");
       halfFloatTexType = webGL.HALF_FLOAT;
-      var supportLinearFiltering = floatLinear || halfFloatLinear;
+      supportLinearFiltering = floatLinear || halfFloatLinear;
     } else {
       // WebGL1: try to detect either float-linear or half-float-linear extensions
       halfFloat = webGL.getExtension("OES_texture_half_float");
       const halfFloatLinear = !!webGL.getExtension("OES_texture_half_float_linear");
       const floatLinear = !!webGL.getExtension("OES_texture_float_linear");
       halfFloatTexType = halfFloat ? halfFloat.HALF_FLOAT_OES : null;
-      var supportLinearFiltering = floatLinear || halfFloatLinear;
+      supportLinearFiltering = floatLinear || halfFloatLinear;
     }
 
     ext.supportLinearFiltering = !!supportLinearFiltering;

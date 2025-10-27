@@ -41,6 +41,9 @@
  * @property {boolean} [DISPLAY_USE_BICUBIC_UPSCALE_ONLY] // If true, use bicubic only when upscaling final output
  */
 
+/**
+ * @type {FluidSimulationConfig}
+ */
 export const config = {
   SIM_RESOLUTION: 256,          // Velocity grid size (px) — options: 32 | 64 | 128 | 256
   DYE_RESOLUTION: 2048,         // Dye texture size (px) — options: 256 | 512 | 1024 | 2048

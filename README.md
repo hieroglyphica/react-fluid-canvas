@@ -5,9 +5,9 @@ A lightweight GPU-powered fluid simulation component for React using WebGL shade
 ![React Fluid Canvas Demo](https://raw.githubusercontent.com/hieroglyphica/react-fluid-canvas/main/docs/assets/demo.gif)
 
 [![npm version](https://img.shields.io/npm/v/react-fluid-canvas.svg)](https://www.npmjs.com/package/react-fluid-canvas)
+[![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![build manual](https://img.shields.io/badge/build-manual-yellow.svg)](#)
-[![GitHub](https://img.shields.io/badge/GitHub-hieroglyphica/react-fluid-canvas-black?logo=github)](https://github.com/hieroglyphica/react-fluid-canvas)
 
 Repository: https://github.com/hieroglyphica/react-fluid-canvas
 
@@ -61,10 +61,11 @@ Highlights
 - Hardware-accelerated fluid simulation with optional bloom (AURA) and volumetric rays (RAY_AURA).
 - iOS-friendly fallbacks (8-bit intermediate path, manual filtering).
 - Fine-grained runtime config via the `config` prop or by editing `src/config/simulationConfig.js`.
+- Now compatible with React 19!
 
 Status
-- Package version: 0.1.12
-- Last updated: 2025-10-26.
+- **Next Version**: Unreleased
+- **Last Stable**: 0.1.13
 - Live demo: https://temporal-codex.web.app/fluid
 - Demo GIF included at: `docs/assets/demo.gif` (this folder is included in published packages).
 

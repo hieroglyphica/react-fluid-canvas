@@ -28,7 +28,7 @@ export const useFluidSimulation = (canvasRef, config) => {
     if (!canvas) return;
 
     // defensive body reset to avoid layout gaps
-    try { document.body.style.margin = "0"; } catch (e) { /* ignore */ }
+    try { document.body.style.margin = "0"; } catch (_e) { /* ignore */ }
 
     // ensure canvas fills parent reliably
     canvas.style.display = canvas.style.display || "block";
@@ -64,10 +64,7 @@ export const useFluidSimulation = (canvasRef, config) => {
       const sim = simulationRef.current;
       if (!sim) return;
       try {
-        const parent = canvas.parentElement || document.body;
-        // force reflow
-        // eslint-disable-next-line no-unused-expressions
-        void parent.offsetWidth;
+        const parent = canvas.parentElement || document.body;        void parent.offsetWidth; // force reflow
 
         // Wait a tick + next animation frame to let the browser settle layout changes
         setTimeout(() => {
@@ -92,12 +89,12 @@ export const useFluidSimulation = (canvasRef, config) => {
               if (typeof cssWidth === "number" && cssWidth > 0 && typeof sim.adjustSplatForSize === "function") {
                 sim.adjustSplatForSize(cssWidth);
               }
-            } catch (err) {
+            } catch (_err) {
               /* ignore during rAF-resize */
             }
           });
         }, 16);
-      } catch (err) {
+      } catch (_err) {
         /* ignore during resize pre-read */
       }
     };
@@ -117,7 +114,7 @@ export const useFluidSimulation = (canvasRef, config) => {
         if (resizeTimeout) clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(handleResizeNow, 80);
       });
-      try { resizeObserver.observe(observedEl); } catch (e) { resizeObserver = null; }
+      try { resizeObserver.observe(observedEl); } catch (_e) { resizeObserver = null; }
     }
 
     // Poll window size as a last-resort fallback to detect layout changes (e.g. some host chrome)

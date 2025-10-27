@@ -6,16 +6,16 @@ Below is the full list of options, a short description, allowed ranges / options
 
 | Option | Description | Range / Options | Default |
 |---|---:|---|---:|
-| SIM_RESOLUTION | Velocity simulation grid size | 32 \| 64 \| 128 \| 256 | 128 |
-| DYE_RESOLUTION | Dye texture resolution | 256 \| 512 \| 1024 \| 2048 | 1024 |
-| DENSITY_DISSIPATION | How quickly dye fades | 0.0 .. 1.0 | 0.97 |
-| VELOCITY_DISSIPATION | How quickly velocity decays | 0.0 .. 1.0 | 0.97 |
-| PRESSURE_ITERATIONS | Jacobi iterations for pressure solve | ~8 .. 48 | 20 |
-| CURL | Vorticity strength (turbulence) | 0 .. 50 | 20 |
-| SPLAT_RADIUS | Interactive splat radius (normalized) | ~0.001 .. 0.03 | 0.01 |
+| SIM_RESOLUTION | Velocity simulation grid size | 32 \| 64 \| 128 \| 256 | 256 |
+| DYE_RESOLUTION | Dye texture resolution | 256 \| 512 \| 1024 \| 2048 | 2048 |
+| DENSITY_DISSIPATION | How quickly dye fades | 0.0 .. 1.0 | 0.99 |
+| VELOCITY_DISSIPATION | How quickly velocity decays | 0.0 .. 1.0 | 0.99 |
+| PRESSURE_ITERATIONS | Jacobi iterations for pressure solve | ~8 .. 48 | 30 |
+| CURL | Vorticity strength (turbulence) | 0 .. 50 | 1 |
+| SPLAT_RADIUS | Interactive splat radius (normalized) | ~0.001 .. 0.03 | 0.005 |
 | SPLAT_FORCE | Force multiplier for splats | 1000 .. 10000 | 3500 |
-| SHADING | Enable pseudo-3D shading | boolean | false |
-| COLORFUL | Enable automatic color cycling | boolean | false |
+| SHADING | Enable pseudo-3D shading | boolean | true |
+| COLORFUL | Enable automatic color cycling | boolean | true |
 | COLOR_THEME | Color behavior: 'default' \| number \| [min,max] | 'default' \| 0..1 \| [min,max] | 'default' |
 | BACK_COLOR | Background color RGB | object {r,g,b} 0..255 | { r:0, g:0, b:0 } |
 | TRANSPARENT | Render transparent background | boolean | false |
@@ -25,7 +25,7 @@ Below is the full list of options, a short description, allowed ranges / options
 | RAY_AURA | Enable volumetric light rays | boolean | false |
 | RAY_AURA_RESOLUTION | Ray aura texture resolution | 64 \| 128 \| 196 \| 256 | 196 |
 | RAY_AURA_WEIGHT | Ray aura intensity | 0.0 .. 1.0 | 0.5 |
-| BRIGHTNESS | Global brightness multiplier | 0.5 .. 2.5 | 1.5 |
+| BRIGHTNESS | Global brightness multiplier | 0.5 .. 2.5 | 1.7 |
 | IOS_FILTER | Manual filter selection: null=auto, true/false overrides | null \| true \| false | null |
 | DISPLAY_USE_BICUBIC | Use bicubic resampling in display shader | boolean | true |
 | DISPLAY_USE_BICUBIC_UPSCALE_ONLY | Bicubic only when upscaling final output | boolean | true |
