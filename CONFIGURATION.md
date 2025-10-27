@@ -50,3 +50,42 @@ Notes:
 Examples
 - To force manual filter mode on all devices: `IOS_FILTER: true`
 - To avoid large upscales on small dye buffers: enable `AUTO_DYE_RESOLUTION` and/or lower `MAX_DYE_UPSCALE`.
+
+New: component props and animation presets
+
+Props summary
+- config: object overriding defaults from `src/config/simulationConfig.js`.
+- coordinates: object or array of objects with shape:
+  - x: number (0..1) — horizontal position (origin top-left)
+  - y: number (0..1) — vertical position (origin top-left)
+  - dx?: number — normalized delta X between frames (will be scaled by config.SPLAT_FORCE)
+  - dy?: number — normalized delta Y between frames
+  - color?: [r,g,b] — optional RGB (0..1) color hint; otherwise computed from config.COLORFUL/ COLOR_THEME
+
+Notes on coordinates:
+- Passing a single object will enqueue one splat; passing an array enqueues multiple splats in the same update.
+- The hook applies SPLAT_FORCE from the config to scale raw dx/dy into simulation velocity.
+- The library converts consumer-space (x,y) into internal texcoords (y is flipped) before adding splats.
+
+Presets
+- orbiting: a small set of particles orbiting a center.
+  - options: { count = 3, center = { x: 0.5, y: 0.5 }, backstep = 0.002 }
+- globalDrift: many particles drifting across the whole canvas.
+  - options: { count = 10, driftSpeed = 0.02 }
+
+Usage
+- To auto-start a preset set `preset` and `autoPlay: true` on the component.
+- Example: `<FluidSimulation preset="orbiting" presetOptions={{count:4, center:{x:0.5,y:0.5}}} autoPlay />`
+
+Props vs programmatic control
+- The primary public surface is props. Use `config`, `coordinates`, and `preset` for most use-cases.
+- Presets provide reusable animations without requiring consumers to implement per-frame logic.
+- If you need finer runtime control in the future, consider adding an explicit callback/ref API; for now props keep the public API small and declarative.
+
+Controller API (ref)
+- If you need imperative control, pass a ref to the component and call methods:
+  - startPreset(name, opts) — start a built-in preset
+  - stopPreset() — stop active preset
+  - splat(x, y, dx?, dy?, color?) — programmatic splat (x,y in 0..1; dx/dy normalized deltas)
+  - multipleSplats(n) — emit n random splats
+  - setConfig(partial) — apply runtime

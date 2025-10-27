@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- 
+
+### Changed
+- 
+
+### Notes
+- 
+
+## [0.1.16] - 2025-10-27
+
+### Added
+- Public props: `coordinates`, `preset`, `presetOptions`, `autoPlay` to allow declarative animation control.
+- Built-in presets: `orbiting`, `globalDrift` (preset factories available internally).
+- `coordinates` prop accepts single or multiple splat descriptors: { x, y, dx?, dy?, color? }.
+
+### Changed
+- Simplified public API: prefer props for configuration and animation control.
+- Removed previous dev-only helpers and DOM exposure used during development (no longer expose simulation on canvas DOM).
+- Demo/test UI removed from example app to present a clean consumer-facing surface.
+- Added a minimal imperative controller (ref) with safe methods: startPreset, stopPreset, splat, multipleSplats, setConfig, getDiagnostics, pause, resume.
+
+### Notes
+- Consumers can now choose between:
+  - declarative splats via `coordinates`,
+  - canned animations via `preset` + `presetOptions` (use with `autoPlay`),
+  - or no built-in animations (pure interactive via mouse/touch).
+- Programmatic control via onReady/ref was removed to keep the public surface minimal; it can be reintroduced if needed.
+
 ## [0.1.15] - 2025-10-27
 
 ### Changed

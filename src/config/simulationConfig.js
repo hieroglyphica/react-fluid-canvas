@@ -21,24 +21,37 @@
  * @property {'default' | number | [number, number]} [COLOR_THEME]
  * @property {{ r: number; g: number; b: number }} [BACK_COLOR]
  * @property {boolean} [TRANSPARENT]
+ *
  * @property {boolean} [AURA]
  * @property {64 | 128 | 196 | 256} [AURA_RESOLUTION]
  * @property {number} [AURA_WEIGHT]
+ *
  * @property {boolean} [RAY_AURA]
  * @property {64 | 128 | 196 | 256} [RAY_AURA_RESOLUTION]
  * @property {number} [RAY_AURA_WEIGHT]
+ *
  * @property {number} [BRIGHTNESS]
+ * @property {null | boolean} [IOS_FILTER]
+ * @property {boolean} [DISPLAY_USE_BICUBIC]
+ * @property {boolean} [DISPLAY_USE_BICUBIC_UPSCALE_ONLY]
+ * @property {boolean} [IOS_ENABLE_BICUBIC_ON_IOS]
+ * @property {boolean} [IOS_SIMULATE_NO_FLOAT_LINEAR]
+ * @property {number | null} [IOS_DPR_CAP]
+ * @property {boolean} [DISPLAY_TO_RGBA8]
+ * @property {boolean} [FINAL_NEAREST_UPSCALE]
+ * @property {boolean} [AUTO_DYE_RESOLUTION]
+ * @property {number} [MAX_DYE_UPSCALE]
+ *
  * @property {number} [IOS_SHARPEN_AMOUNT]
  * @property {number} [IOS_SHARPEN_BOOST]
  * @property {'normal' | 'strong'} [IOS_SHARPEN_MODE]
  * @property {boolean} [IOS_SHARPEN_STRONG]
- * @property {boolean} [DISPLAY_USE_BICUBIC]
- * @property {boolean} [IOS_ENABLE_BICUBIC_ON_IOS]
- * @property {number} [IOS_DPR_CAP]
- * @property {boolean} [IOS_SIMULATE_NO_FLOAT_LINEAR]
- * @property {'low' | 'medium' | 'high' | 'ultra'} [QUALITY]  Preset quality level that adjusts several simulation parameters
- * @property {boolean} [AUTO_DYE_RESOLUTION]  // If true, pick dye FBO size from canvas backing (up to DYE_RESOLUTION)
- * @property {boolean} [DISPLAY_USE_BICUBIC_UPSCALE_ONLY] // If true, use bicubic only when upscaling final output
+ *
+ * @property {'low' | 'medium' | 'high' | 'ultra'} [QUALITY]
+ * @property {boolean} [DEBUG_OVERLAY]
+ *
+ * // Allow additional keys for forward-compatibility
+ * @property {any} [key]
  */
 
 /**

@@ -733,6 +733,104 @@ export class FluidSimulation {
     }
   }
 
+  _getManualFilterFlag() {
+    if (this.config.IOS_FILTER === true) {
+      return 1;
+    }
+    if (this.config.IOS_FILTER === false) {
+      return 0;
+    }
+    // auto: use manual only when HW float-linear is NOT supported (or simulated)
+    const hwSupportsLinear = !!(this.manager.ext && this.manager.ext.supportLinearFiltering);
+    const simulateNoFloat = !!this.config.IOS_SIMULATE_NO_FLOAT_LINEAR;
+    const effectiveSupportsLinear = simulateNoFloat ? false : hwSupportsLinear;
+    return effectiveSupportsLinear ? 0 : 1;
+  }
+
+  _getUseBicubicFlag(manualFilterFlag) {
+    const { webGL } = this.manager;
+    const drawW = webGL.drawingBufferWidth || (this.canvas && this.canvas.width) || 1;
+    const drawH = webGL.drawingBufferHeight || (this.canvas && this.canvas.height) || 1;
+    const upscaleX = drawW / Math.max(1, this.dye.width);
+    const upscaleY = drawH / Math.max(1, this.dye.height);
+    const isUpscaling = upscaleX > 1.01 || upscaleY > 1.01;
+
+    const bicubicGlobal = !!this.config.DISPLAY_USE_BICUBIC;
+    const bicubicOnIOS = !!this.config.IOS_ENABLE_BICUBIC_ON_IOS;
+    const upscaleOnly = !!this.config.DISPLAY_USE_BICUBIC_UPSCALE_ONLY;
+    const bicubicAllowed = bicubicGlobal || (this._isIOS && bicubicOnIOS);
+
+    return manualFilterFlag && bicubicAllowed && (!upscaleOnly || isUpscaling);
+  }
+
+  _setSharedDisplayUniforms(program, manualFilterFlag, useBicubic) {
+    const { webGL } = this.manager;
+    if (program.uniforms.uManualFilter) webGL.uniform1i(program.uniforms.uManualFilter, manualFilterFlag);
+    if (program.uniforms.uUseBicubic) webGL.uniform1i(program.uniforms.uUseBicubic, useBicubic ? 1 : 0);
+    if (program.uniforms.uTexture) webGL.uniform1i(program.uniforms.uTexture, this.dye.read.attach(0));
+    if (program.uniforms.uAura) webGL.uniform1i(program.uniforms.uAura, this.aura.attach(1));
+    if (program.uniforms.uShadingEnabled) webGL.uniform1i(program.uniforms.uShadingEnabled, this.config.SHADING);
+    if (program.uniforms.dyeTexelSize) webGL.uniform2f(program.uniforms.dyeTexelSize, 1.0 / this.dye.width, 1.0 / this.dye.height);
+    if (program.uniforms.transparent) webGL.uniform1i(program.uniforms.transparent, this.config.TRANSPARENT);
+    if (program.uniforms.uAuraEnabled) webGL.uniform1i(program.uniforms.uAuraEnabled, this.config.AURA);
+    if (program.uniforms.uBrightness) webGL.uniform1f(program.uniforms.uBrightness, this.config.BRIGHTNESS);
+    if (program.uniforms.uRayAuraEnabled) webGL.uniform1i(program.uniforms.uRayAuraEnabled, this.config.RAY_AURA);
+    if (program.uniforms.uRayAura) webGL.uniform1i(program.uniforms.uRayAura, this.rayAura.attach(2));
+    if (program.uniforms.backColor) webGL.uniform3f(program.uniforms.backColor, this.config.BACK_COLOR.r / 255.0, this.config.BACK_COLOR.g / 255.0, this.config.BACK_COLOR.b / 255.0);
+  }
+
+  _renderTo8BitIntermediate(manualFilterFlag, useBicubic) {
+    const { webGL, blit } = this.manager;
+    const { display: displayProgram, downsample: downsampleProgram, sharpen: sharpenProgram, copy: copyProgram } = this.programs;
+
+    const needDownsampleTo8 = !this.manager.ext.supportLinearFiltering && this.dye8;
+
+    if (needDownsampleTo8) {
+      webGL.viewport(0, 0, this.dye8.width, this.dye8.height);
+      downsampleProgram.bind();
+      if (downsampleProgram.uniforms.uSource) webGL.uniform1i(downsampleProgram.uniforms.uSource, this.dye.read.attach(0));
+      if (downsampleProgram.uniforms.destSize) webGL.uniform2f(downsampleProgram.uniforms.destSize, this.dye8.width, this.dye8.height);
+      blit(this.dye8.fbo);
+    }
+
+    webGL.viewport(0, 0, this.display8.width, this.display8.height);
+    displayProgram.bind();
+
+    if (needDownsampleTo8 && this.dye8) {
+      if (displayProgram.uniforms.uManualFilter) webGL.uniform1i(displayProgram.uniforms.uManualFilter, 0);
+      if (displayProgram.uniforms.uUseBicubic) webGL.uniform1i(displayProgram.uniforms.uUseBicubic, 0);
+      if (displayProgram.uniforms.uTexture) webGL.uniform1i(displayProgram.uniforms.uTexture, this.dye8.attach(0));
+      if (displayProgram.uniforms.dyeTexelSize) webGL.uniform2f(displayProgram.uniforms.dyeTexelSize, 1.0 / this.dye8.width, 1.0 / this.dye8.height);
+    } else {
+      this._setSharedDisplayUniforms(displayProgram, manualFilterFlag, useBicubic);
+    }
+    blit(this.display8.fbo);
+
+    webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
+
+    const needSharpen = !this.manager.ext.supportLinearFiltering && this.config.IOS_SHARPEN_AMOUNT > 0;
+    if (needSharpen) {
+      sharpenProgram.bind();
+      if (sharpenProgram.uniforms.uTexture) webGL.uniform1i(sharpenProgram.uniforms.uTexture, this.display8.attach(0));
+      if (sharpenProgram.uniforms.texelSize) webGL.uniform2f(sharpenProgram.uniforms.texelSize, 1.0 / this.display8.width, 1.0 / this.display8.height);
+      if (sharpenProgram.uniforms.amount) webGL.uniform1f(sharpenProgram.uniforms.amount, Number(this.config.IOS_SHARPEN_AMOUNT) || 0.18);
+      blit(null);
+    } else {
+      copyProgram.bind();
+      if (copyProgram.uniforms.uTexture) webGL.uniform1i(copyProgram.uniforms.uTexture, this.display8.attach(0));
+      blit(null);
+    }
+  }
+
+  _renderDirectToCanvas(manualFilterFlag, useBicubic) {
+    const { webGL, blit } = this.manager;
+    const { display: displayProgram } = this.programs;
+    webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
+    displayProgram.bind();
+    this._setSharedDisplayUniforms(displayProgram, manualFilterFlag, useBicubic);
+    blit(null);
+  }
+
   _update(dt) {
     const { webGL, blit } = this.manager;
     const {
@@ -741,11 +839,7 @@ export class FluidSimulation {
       divergence: divergenceProgram,
       advection: advectionProgram,
       pressure: pressureProgram,
-      gradientSubtract: gradientSubtractProgram,
-      display: displayProgram,
-      copy: copyProgram,
-      downsample: downsampleProgram,
-      sharpen: sharpenProgram,
+      gradientSubtract: gradientSubtractProgram
     } = this.programs;
 
     const curlScale = 128.0 / Math.max(1, this.textureWidth);
@@ -753,27 +847,7 @@ export class FluidSimulation {
 
     // Decide whether to use manual bilinear filtering (uManualFilter):
     // - If config.IOS_FILTER === true  => force manual filter
-    // - If config.IOS_FILTER === false => never use manual filter
-    // - If config.IOS_FILTER == null/undefined => auto: use manual only when HW float-linear is NOT supported
-    let manualFilterFlag = 0;
-    if (this.config.IOS_FILTER === true) {
-      // explicit user override: force manual filtering
-      manualFilterFlag = 1;
-    } else if (this.config.IOS_FILTER === false) {
-      // explicit user override: disable manual filtering
-      manualFilterFlag = 0;
-    } else {
-      // auto: prefer hardware float/half-float linear filtering when available.
-      // Only fall back to manual when the runtime reports no support (or when simulated).
-      const hwSupportsLinear = !!(
-        this.manager.ext && this.manager.ext.supportLinearFiltering
-      );
-      const simulateNoFloat = !!this.config.IOS_SIMULATE_NO_FLOAT_LINEAR;
-      const effectiveSupportsLinear = simulateNoFloat
-        ? false
-        : hwSupportsLinear;
-      manualFilterFlag = effectiveSupportsLinear ? 0 : 1;
-    }
+    const manualFilterFlag = this._getManualFilterFlag();
 
     // velocity advection
     webGL.viewport(0, 0, this.textureWidth, this.textureHeight);
@@ -910,264 +984,12 @@ export class FluidSimulation {
       this._applyRayAura(this.dye, this.rayAuraMask, this.rayAura);
     }
 
-    // Compute upscaling factors between dye texture and final drawing buffer
-    const drawW =
-      webGL.drawingBufferWidth || (this.canvas && this.canvas.width) || 1;
-    const drawH =
-      webGL.drawingBufferHeight || (this.canvas && this.canvas.height) || 1;
-    const upscaleX = drawW / Math.max(1, this.dye.width);
-    const upscaleY = drawH / Math.max(1, this.dye.height);
-    const isUpscaling = upscaleX > 1.01 || upscaleY > 1.01; // small tolerance
+    const useBicubic = this._getUseBicubicFlag(manualFilterFlag);
 
     if (this.config.DISPLAY_TO_RGBA8 && this.display8) {
-      // compute whether we need to downsample dye to 8-bit first (no float-linear)
-      const needDownsampleTo8 =
-        !this.manager.ext.supportLinearFiltering && this.dye8;
-      const wantNearestFinal = !!this.config.FINAL_NEAREST_UPSCALE;
-
-      if (needDownsampleTo8 && downsampleProgram) {
-        // 0) downsample half-float dye -> dye8 using pixel-center sampling (nearest-style)
-        webGL.viewport(0, 0, this.dye8.width, this.dye8.height);
-        downsampleProgram.bind();
-        if (downsampleProgram.uniforms.uSource)
-          webGL.uniform1i(
-            downsampleProgram.uniforms.uSource,
-            this.dye.read.attach(0)
-          );
-        if (downsampleProgram.uniforms.destSize)
-          webGL.uniform2f(
-            downsampleProgram.uniforms.destSize,
-            this.dye8.width,
-            this.dye8.height
-          );
-        blit(this.dye8.fbo);
-      }
-
-      // 1) render the display shader into the 8-bit intermediate (tone-mapped / converted)
-      webGL.viewport(0, 0, this.display8.width, this.display8.height);
-      displayProgram.bind();
-
-      // When using dye8 (downsampled) or forcing nearest final upscale, bypass tonemapping & saturation
-      const bypassTonemap = !!(needDownsampleTo8 || wantNearestFinal);
-      if (displayProgram.uniforms.uBypassTonemap)
-        webGL.uniform1i(
-          displayProgram.uniforms.uBypassTonemap,
-          bypassTonemap ? 1 : 0
-        );
-
-      // If we downsampled into an 8-bit dye (dye8), make the display shader sample that texture
-      // using dye8's texel size and disable manual/bicubic sampling (hardware linear for u8 is fine).
-      if (needDownsampleTo8 && this.dye8) {
-        if (displayProgram.uniforms.uManualFilter)
-          webGL.uniform1i(displayProgram.uniforms.uManualFilter, 0);
-        if (displayProgram.uniforms.uUseBicubic)
-          webGL.uniform1i(displayProgram.uniforms.uUseBicubic, 0);
-        if (displayProgram.uniforms.uTexture)
-          webGL.uniform1i(
-            displayProgram.uniforms.uTexture,
-            this.dye8.attach(0)
-          );
-        if (displayProgram.uniforms.dyeTexelSize)
-          webGL.uniform2f(
-            displayProgram.uniforms.dyeTexelSize,
-            1.0 / this.dye8.width,
-            1.0 / this.dye8.height
-          );
-      } else {
-        if (displayProgram.uniforms.uManualFilter)
-          webGL.uniform1i(
-            displayProgram.uniforms.uManualFilter,
-            manualFilterFlag
-          );
-        // decide bicubic normally only for half-float sampling path
-        if (displayProgram.uniforms.uUseBicubic) {
-          const bicubicGlobal = !!this.config.DISPLAY_USE_BICUBIC;
-          const bicubicOnIOS = !!this.config.IOS_ENABLE_BICUBIC_ON_IOS;
-          const upscaleOnly = !!this.config.DISPLAY_USE_BICUBIC_UPSCALE_ONLY;
-          const bicubicAllowed = bicubicGlobal || (this._isIOS && bicubicOnIOS);
-          const useBicubic =
-            manualFilterFlag && bicubicAllowed && (!upscaleOnly || isUpscaling);
-          webGL.uniform1i(
-            displayProgram.uniforms.uUseBicubic,
-            useBicubic ? 1 : 0
-          );
-        }
-        if (displayProgram.uniforms.uTexture)
-          webGL.uniform1i(
-            displayProgram.uniforms.uTexture,
-            this.dye.read.attach(0)
-          );
-        if (displayProgram.uniforms.dyeTexelSize)
-          webGL.uniform2f(
-            displayProgram.uniforms.dyeTexelSize,
-            1.0 / this.dye.width,
-            1.0 / this.dye.height
-          );
-      }
-      if (displayProgram.uniforms.uAura)
-        webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1));
-      if (displayProgram.uniforms.uShadingEnabled)
-        webGL.uniform1i(
-          displayProgram.uniforms.uShadingEnabled,
-          this.config.SHADING
-        );
-      if (displayProgram.uniforms.transparent)
-        webGL.uniform1i(
-          displayProgram.uniforms.transparent,
-          this.config.TRANSPARENT
-        );
-      if (displayProgram.uniforms.uAuraEnabled)
-        webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
-      if (displayProgram.uniforms.uBrightness)
-        webGL.uniform1f(
-          displayProgram.uniforms.uBrightness,
-          this.config.BRIGHTNESS
-        );
-      if (displayProgram.uniforms.uRayAuraEnabled)
-        webGL.uniform1i(
-          displayProgram.uniforms.uRayAuraEnabled,
-          this.config.RAY_AURA
-        );
-      if (displayProgram.uniforms.uRayAura)
-        webGL.uniform1i(
-          displayProgram.uniforms.uRayAura,
-          this.rayAura.attach(2)
-        );
-      if (displayProgram.uniforms.backColor)
-        webGL.uniform3f(
-          displayProgram.uniforms.backColor,
-          this.config.BACK_COLOR.r / 255.0,
-          this.config.BACK_COLOR.g / 255.0,
-          this.config.BACK_COLOR.b / 255.0
-        );
-      blit(this.display8.fbo);
-
-      // 2) final blit: draw the 8-bit texture to canvas — hardware linear filtering available for u8 textures
-      webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
-
-      // Optionally force nearest sampling for the final upscale (crisper / aliased look).
-      // (reuse wantNearestFinal defined earlier in this scope)
-      // let prevBoundTex = null;
-      if (wantNearestFinal && this.display8 && this.display8.texture) {
-        // prevBoundTex = this.display8.texture;
-        webGL.bindTexture(webGL.TEXTURE_2D, this.display8.texture);
-        webGL.texParameteri(
-          webGL.TEXTURE_2D,
-          webGL.TEXTURE_MIN_FILTER,
-          webGL.NEAREST
-        );
-        webGL.texParameteri(
-          webGL.TEXTURE_2D,
-          webGL.TEXTURE_MAG_FILTER,
-          webGL.NEAREST
-        );
-      }
-
-      // prefer sharpen pass if configured & HW float-linear is missing
-      const needSharpen =
-        !this.manager.ext.supportLinearFiltering &&
-        this.config.IOS_SHARPEN_AMOUNT &&
-        this.config.IOS_SHARPEN_AMOUNT > 0;
-      if (needSharpen && sharpenProgram) {
-        sharpenProgram.bind();
-        if (sharpenProgram.uniforms.uTexture)
-          webGL.uniform1i(
-            sharpenProgram.uniforms.uTexture,
-            this.display8.attach(0)
-          );
-        if (sharpenProgram.uniforms.texelSize)
-          webGL.uniform2f(
-            sharpenProgram.uniforms.texelSize,
-            1.0 / this.display8.width,
-            1.0 / this.display8.height
-          );
-        if (sharpenProgram.uniforms.amount)
-          webGL.uniform1f(
-            sharpenProgram.uniforms.amount,
-            Number(this.config.IOS_SHARPEN_AMOUNT) || 0.18
-          );
-        blit(null);
-      } else {
-        copyProgram.bind();
-        if (copyProgram.uniforms.uTexture)
-          webGL.uniform1i(
-            copyProgram.uniforms.uTexture,
-            this.display8.attach(0)
-          );
-        blit(null);
-      }
-
-      // Restore linear filtering if we temporarily switched to NEAREST.
-      if (wantNearestFinal && this.display8 && this.display8.texture) {
-        webGL.bindTexture(webGL.TEXTURE_2D, this.display8.texture);
-        webGL.texParameteri(
-          webGL.TEXTURE_2D,
-          webGL.TEXTURE_MIN_FILTER,
-          webGL.LINEAR
-        );
-        webGL.texParameteri(
-          webGL.TEXTURE_2D,
-          webGL.TEXTURE_MAG_FILTER,
-          webGL.LINEAR
-        );
-        webGL.bindTexture(webGL.TEXTURE_2D, null);
-      }
+      this._renderTo8BitIntermediate(manualFilterFlag, useBicubic);
     } else {
-      // fallback: render directly to canvas
-      webGL.viewport(0, 0, webGL.drawingBufferWidth, webGL.drawingBufferHeight);
-      displayProgram.bind();
-      if (displayProgram.uniforms.uManualFilter)
-        webGL.uniform1i(
-          displayProgram.uniforms.uManualFilter,
-          manualFilterFlag
-        );
-      if (displayProgram.uniforms.uUseBicubic) {
-        const bicubicGlobal = !!this.config.DISPLAY_USE_BICUBIC;
-        const bicubicOnIOS = !!this.config.IOS_ENABLE_BICUBIC_ON_IOS;
-        const upscaleOnly = !!this.config.DISPLAY_USE_BICUBIC_UPSCALE_ONLY;
-        const bicubicAllowed = bicubicGlobal || (this._isIOS && bicubicOnIOS);
-        const useBicubic =
-          manualFilterFlag && bicubicAllowed && (!upscaleOnly || isUpscaling);
-        webGL.uniform1i(
-          displayProgram.uniforms.uUseBicubic,
-          useBicubic ? 1 : 0
-        );
-      }
-      webGL.uniform1i(
-        displayProgram.uniforms.uTexture,
-        this.dye.read.attach(0)
-      );
-      webGL.uniform1i(displayProgram.uniforms.uAura, this.aura.attach(1));
-      webGL.uniform1i(
-        displayProgram.uniforms.uShadingEnabled,
-        this.config.SHADING
-      );
-      webGL.uniform2f(
-        displayProgram.uniforms.dyeTexelSize,
-        1.0 / this.dye.width,
-        1.0 / this.dye.height
-      );
-      webGL.uniform1i(
-        displayProgram.uniforms.transparent,
-        this.config.TRANSPARENT
-      );
-      webGL.uniform1i(displayProgram.uniforms.uAuraEnabled, this.config.AURA);
-      webGL.uniform1f(
-        displayProgram.uniforms.uBrightness,
-        this.config.BRIGHTNESS
-      );
-      webGL.uniform1i(
-        displayProgram.uniforms.uRayAuraEnabled,
-        this.config.RAY_AURA
-      );
-      webGL.uniform1i(displayProgram.uniforms.uRayAura, this.rayAura.attach(2));
-      webGL.uniform3f(
-        displayProgram.uniforms.backColor,
-        this.config.BACK_COLOR.r / 255.0,
-        this.config.BACK_COLOR.g / 255.0,
-        this.config.BACK_COLOR.b / 255.0
-      );
-      blit(null);
+      this._renderDirectToCanvas(manualFilterFlag, useBicubic);
     }
   }
 
@@ -1316,6 +1138,7 @@ export class FluidSimulation {
   }
 
   // Lightweight sanity checks and production-safety warnings.
+  // This method is called once during initialization.
   _validateConfig() {
     try {
       const isProd =
@@ -1323,29 +1146,93 @@ export class FluidSimulation {
         process.env &&
         process.env.NODE_ENV === "production";
       // Warn if a developer-only simulation flag is enabled in production build
+      // or if DEBUG_OVERLAY is left enabled.
       if (isProd && this.config.IOS_SIMULATE_NO_FLOAT_LINEAR) {
         console.warn(
-          "FluidSimulation: IOS_SIMULATE_NO_FLOAT_LINEAR is enabled in a production build. Ensure this is intentional."
+          "FluidSimulation: `IOS_SIMULATE_NO_FLOAT_LINEAR` is enabled in a production build. Ensure this is intentional."
         );
       }
-      // Warn if DEBUG_OVERLAY left enabled in production (optional)
       if (isProd && this.config.DEBUG_OVERLAY) {
         console.info(
-          "FluidSimulation: DEBUG_OVERLAY is enabled. You may want to disable it for production builds."
+          "FluidSimulation: `DEBUG_OVERLAY` is enabled. You may want to disable it for production builds."
         );
       }
-      // Sanity: dye resolution shouldn't exceed device max texture size
+
+      const {
+        SIM_RESOLUTION,
+        DYE_RESOLUTION,
+        COLOR_THEME,
+        IOS_DPR_CAP,
+      } = this.config;
+
+      // Check numerical ranges and types
+      const checkNumber = (key, min, max, integer = false) => {
+        const value = this.config[key];
+        if (typeof value !== "number" || isNaN(value)) {
+          console.warn(
+            `FluidSimulation: Configuration key \`${key}\` should be a number. Received: ${value}`
+          );
+          return false;
+        }
+        if (integer && !Number.isInteger(value)) {
+          console.warn(
+            `FluidSimulation: Configuration key \`${key}\` should be an integer. Received: ${value}`
+          );
+          return false;
+        }
+        if (value < min || value > max) {
+          console.warn(
+            `FluidSimulation: Configuration key \`${key}\` (${value}) is outside the recommended range [${min}, ${max}].`
+          );
+          return false;
+        }
+        return true;
+      };
+
+      checkNumber("SIM_RESOLUTION", 32, 256, true);
+      checkNumber("DYE_RESOLUTION", 256, 4096, true);
+      checkNumber("DENSITY_DISSIPATION", 0.0, 1.0);
+      checkNumber("VELOCITY_DISSIPATION", 0.0, 1.0);
+      checkNumber("PRESSURE_ITERATIONS", 8, 48, true);
+      checkNumber("CURL", 0, 50);
+      checkNumber("SPLAT_RADIUS", 0.001, 0.03);
+      checkNumber("SPLAT_FORCE", 1000, 10000);
+      checkNumber("BRIGHTNESS", 0.5, 2.5);
+      checkNumber("MAX_DYE_UPSCALE", 1.0, 4.0);
+      if (IOS_DPR_CAP !== null) checkNumber("IOS_DPR_CAP", 0.5, 3.0); // Assuming a reasonable cap range
+
+      // Check resolution consistency
+      if (DYE_RESOLUTION < SIM_RESOLUTION) {
+        console.warn(
+          `FluidSimulation: \`DYE_RESOLUTION\` (${DYE_RESOLUTION}) is lower than \`SIM_RESOLUTION\` (${SIM_RESOLUTION}). This might lead to visual artifacts or unexpected behavior.`
+        );
+      }
+
+      // Check COLOR_THEME validity
+      if (
+        typeof COLOR_THEME !== "string" &&
+        typeof COLOR_THEME !== "number" &&
+        !Array.isArray(COLOR_THEME)
+      ) {
+        console.warn(
+          `FluidSimulation: \`COLOR_THEME\` has an invalid type. Expected 'string', 'number', or 'array'. Received: ${typeof COLOR_THEME}`
+        );
+      } else if (Array.isArray(COLOR_THEME) && COLOR_THEME.length !== 2) {
+        console.warn(
+          `FluidSimulation: \`COLOR_THEME\` array should contain exactly two numbers [min, max]. Received array of length: ${COLOR_THEME.length}`
+        );
+      }
+
+      // Sanity: dye resolution shouldn't exceed device max texture size.
       const maxTex =
         this.manager && this.manager.ext
           ? this.manager.ext.maxTextureSize
           : null;
       if (
-        maxTex &&
-        this.config.DYE_RESOLUTION &&
-        this.config.DYE_RESOLUTION > maxTex
+        maxTex && DYE_RESOLUTION && DYE_RESOLUTION > maxTex
       ) {
         console.warn(
-          `FluidSimulation: DYE_RESOLUTION (${this.config.DYE_RESOLUTION}) exceeds device max texture size (${maxTex}). Consider lowering it.`
+          `FluidSimulation: \`DYE_RESOLUTION\` (${DYE_RESOLUTION}) exceeds device max texture size (${maxTex}). Consider lowering it.`
         );
       }
     } catch (_e) {

@@ -52,10 +52,91 @@ function App() {
   );
 }
 ```
+
+New props overview
+- config: Override canonical defaults (see `src/config/simulationConfig.js`).
+- coordinates: Single object or array of { x, y, dx?, dy?, color? } (x,y normalized 0..1 origin top-left). dx/dy are normalized motion deltas; they will be scaled by config.SPLAT_FORCE by the library.
+- preset: Start a built-in animation preset automatically when used with autoPlay. Supported presets: "orbiting", "globalDrift".
+- presetOptions: Object passed to the preset factory (e.g. { count, center, driftSpeed }).
+- autoPlay: boolean to start the selected preset automatically.
+
+Example — start a built-in preset on mount
+```jsx
+// PresetAutoPlay.jsx
+import Fluid from "react-fluid-canvas";
+
+export default function PresetAutoPlay() {
+  return (
+    <div style={{height: "100vh"}}>
+      <Fluid
+        preset="orbiting"
+        autoPlay={true}
+        presetOptions={{ count: 4, center: { x: 0.5, y: 0.5 }, backstep: 0.002 }}
+        config={{ COLORFUL: true }}
+      />
+    </div>
+  );
+}
+```
+
+Example — animate programmatically by updating coordinates prop
+```jsx
+// CoordinatesDemo.jsx
+import { useState, useEffect } from "react";
+import Fluid from "react-fluid-canvas";
+
+export default function CoordinatesDemo() {
+  const [coords, setCoords] = useState({ x: 0.5, y: 0.5, dx: 0, dy: 0 });
+
+  useEffect(() => {
+    let t = 0;
+    const id = setInterval(() => {
+      t += 0.06;
+      const x = 0.5 + 0.35 * Math.cos(t);
+      const y = 0.5 + 0.35 * Math.sin(t);
+      const dx = Math.cos(t) * 0.002;
+      const dy = Math.sin(t) * 0.002;
+      setCoords({ x, y, dx, dy, color: [1, 0.6, 0.2] });
+    }, 60);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div style={{height: "100vh"}}>
+      <Fluid config={{ SPLAT_FORCE: 3500 }} coordinates={coords} />
+    </div>
+  );
+}
+```
+
+Programmatic controller (optional, recommended)
+- Use a component ref to call imperative methods (startPreset, stopPreset, splat, multipleSplats, setConfig, getDiagnostics, pause, resume).
+
+Example:
+```jsx
+import { useRef, useEffect } from "react";
+import Fluid from "react-fluid-canvas";
+
+export default function WithController() {
+  const fluidRef = useRef(null);
+
+  useEffect(() => {
+    if (!fluidRef.current) return;
+    // start built-in preset
+    fluidRef.current.startPreset("orbiting", { count: 4, center: { x: 0.5, y: 0.5 } });
+    // after 5s pause, then resume
+    const t = setTimeout(() => { fluidRef.current.pause(); }, 5000);
+    const t2 = setTimeout(() => { fluidRef.current.resume(); }, 8000);
+    return () => { clearTimeout(t); clearTimeout(t2); };
+  }, []);
+
+  return <Fluid ref={fluidRef} config={{ COLORFUL: true }} />;
+}
+```
+
 Notes
-- Canonical defaults live at: `src/config/simulationConfig.js`
-- Human-readable option reference: [CONFIGURATION.md](./CONFIGURATION.md)
-- Runtime changelog: [CHANGELOG.md](./CHANGELOG.md)
+- For multi-splat frames pass an array to `coordinates`.
+- The library now favors props for configuration and simple animations. Programmatic control via callbacks/refs is intentionally minimal in this release; presets are the recommended reusable building blocks.
 
 Highlights
 - Hardware-accelerated fluid simulation with optional bloom (AURA) and volumetric rays (RAY_AURA).
