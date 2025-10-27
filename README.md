@@ -65,7 +65,7 @@ Highlights
 
 Status
 - **Next Version**: Unreleased
-- **Last Stable**: 0.1.14
+- **Last Stable**: 0.1.15
 - Live demo: https://temporal-codex.web.app/fluid
 - Demo GIF included at: `docs/assets/demo.gif` (this folder is included in published packages).
 
