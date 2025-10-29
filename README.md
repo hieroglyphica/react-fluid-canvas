@@ -20,7 +20,7 @@ Table of Contents
 - [Publishing](#publishing)
 - [Contributing](#contributing)
 
-Live demo: https://temporal-codex.web.app/fluid
+Live demo: https://react-fluid-canvas.web.app/
 
 ## Quickstart
 
@@ -193,6 +193,7 @@ Audio integration hint
 
 The simulation config object is passed to the `FluidSimulation` component and can be overridden by the `config` prop. It contains the following fields:
 
+(For the full, annotated list of configuration options and recommended ranges see CONFIGURATION.md in the repo.)
 - SIM_RESOLUTION: The resolution of the simulation grid (default: 128).
 - DYE_RESOLUTION: The resolution of the dye grid (default: 1024).
 - DENSITY_DISSIPATION: The density dissipation rate (default: 0.97).

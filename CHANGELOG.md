@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hook: processCoordItems and scheduleCoordFlush stabilized (useCallback) and configRef introduced to avoid stale closures and lint warnings.
 - Presets: brightness/speed tuning and new music-friendly preset behaviors.
 - Demo: memoized presetOptions in App.jsx to avoid unintended preset restarts when other props change.
+- Docs: update README demo URL to https://react-fluid-canvas.web.app/ and add pointer to CONFIGURATION.md.
+- Scripts: make the release `scripts/version.js` tolerant when cross-env / env var is missing by falling back to package.json version.
 
 ### Fixed
 - ESLint: fixed no-empty / unused-var issues in presetAnimations and related modules.
