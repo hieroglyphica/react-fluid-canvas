@@ -16,7 +16,7 @@ Table of Contents
 - [Configuration](#configuration)
 - [Highlights](#highlights)
 - [Status](#status)
-- **Last Stable**: 0.1.17
+- **Last Stable**: 0.1.18
 - [Publishing](#publishing)
 - [Contributing](#contributing)
 
