@@ -28,8 +28,25 @@ const FluidSimulation = forwardRef(({ config: userConfig, coordinates, preset, p
     };
   }, [controller]);
 
+  // Ensure canvas is visible and fills parent even if WebGL hasn't initialized.
+  const bgColor = simulationConfig && simulationConfig.TRANSPARENT
+    ? "transparent"
+    : simulationConfig && simulationConfig.BACK_COLOR
+    ? `rgb(${simulationConfig.BACK_COLOR.r}, ${simulationConfig.BACK_COLOR.g}, ${simulationConfig.BACK_COLOR.b})`
+    : "#000";
+
+  const defaultStyle = {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    display: "block",
+    backgroundColor: bgColor,
+    ...style,
+  };
+
   return (
-    <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", ...style }} {...rest} />
+    <canvas ref={canvasRef} style={defaultStyle} {...rest} />
   );
 });
 

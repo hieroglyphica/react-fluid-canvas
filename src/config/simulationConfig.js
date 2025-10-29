@@ -91,4 +91,8 @@ export const config = {
   MAX_DYE_UPSCALE: 3.0,         // Max allowed display/dye upscale factor (>=1.0)
   FINAL_NEAREST_UPSCALE: false, // Use NEAREST for final upscale when true (bool)
   IOS_SHARPEN_AMOUNT: 0.18,     // Sharpen amount for 8-bit fallback (0.0..1.0)
+  COORDINATE_THROTTLE_MS: 40,   // Milliseconds between processing incoming `coordinates` prop batches (throttling)
+  COORDINATE_MIN_DELTA: 1e-5,   // Minimum motion magnitude (after SPLAT_FORCE scaling) required to emit a splat
+  COORDINATE_MAX_STEP: 0.02,    // Maximum normalized coordinate distance per emitted sub-splat when smoothing
+  COORDINATE_MAX_SUBSTEPS: 8,   // Hard cap on the number of interpolation substeps for a single coordinate update
 };

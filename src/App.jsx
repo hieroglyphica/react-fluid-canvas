@@ -1,12 +1,12 @@
 import FluidSimulation from "./index.jsx";
-import { config as defaultConfig } from "./config/simulationConfig";
 
-function App() {
-  return (
-    <div style={{ position: "fixed", inset: 0, overflow: "hidden", zIndex: 0 }}>
-      <FluidSimulation config={defaultConfig} />
-    </div>
-  );
+export default function App() {
+	return (
+		<div style={{ width: "100vw", height: "100vh", position: "relative" }}>
+			{/* Minimal usage: consumers can pass `config`, `preset`, `coordinates`, etc. when needed */}
+			<FluidSimulation style={{ width: "100%", height: "100%" }} />
+		</div>
+	);
 }
 
-export default App;
+

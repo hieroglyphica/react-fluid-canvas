@@ -39,6 +39,10 @@ Below is the full list of options, a short description, allowed ranges / options
 | IOS_SHARPEN_AMOUNT | Sharpen amount for 8-bit fallback (unsharp mask) | 0.0 .. 1.0 | 0.18 |
 | QUALITY | Preset quality level (applies SIM/DYE/PRESSURE/CURL) | 'low' \| 'medium' \| 'high' \| 'ultra' | 'medium' |
 | DEBUG_OVERLAY | Show on-screen diagnostic overlay | boolean | ~true~ false |
+| COORDINATE_THROTTLE_MS | Milliseconds between processing incoming `coordinates` prop batches (throttling) | number >= 0 | 40 |
+| COORDINATE_MIN_DELTA | Minimum motion magnitude (after SPLAT_FORCE scaling) required to emit a splat; tiny moves are ignored | number >= 0 | 1e-5 |
+| COORDINATE_MAX_STEP | Maximum normalized coordinate distance per emitted sub-splat when smoothing consumer coordinates (smaller => more substeps) | number > 0 | 0.02 |
+| COORDINATE_MAX_SUBSTEPS | Hard cap on the number of interpolation substeps emitted for a single coordinate update (prevents runaway splats) | integer >= 1 | 8 |
 
 Notes:
 - Ranges above are informational only (no runtime enforcement) — use them as guidance.
@@ -88,4 +92,4 @@ Controller API (ref)
   - stopPreset() — stop active preset
   - splat(x, y, dx?, dy?, color?) — programmatic splat (x,y in 0..1; dx/dy normalized deltas)
   - multipleSplats(n) — emit n random splats
-  - setConfig(partial) — apply runtime
+  - setConfig(partial) — apply runtime config changes

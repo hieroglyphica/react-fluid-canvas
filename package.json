@@ -24,8 +24,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build:lib",
     "build": "vite build",
+    "build:lib": "cross-env VITE_BUILD_LIBRARY=true vite build",
     "version": "node scripts/version.js && git add CHANGELOG.md README.md",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -33,6 +34,7 @@
     "publish:pkg": "npm publish --access public"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",

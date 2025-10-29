@@ -146,9 +146,7 @@ export class WebGLManager {
     const boundGetSupportedFormat = getSupportedFormat.bind(this);
 
     if (isWebGL2) {
-      ext.formatRGBA = boundGetSupportedFormat(webGL.RGBA16F, webGL.RGBA, halfFloatTexType);
-      ext.formatRG = boundGetSupportedFormat(webGL.RG16F, webGL.RG, halfFloatTexType);
-      ext.formatR = boundGetSupportedFormat(webGL.R16F, webGL.RED, halfFloatTexType);
+      ext.formatRGBA = ext.formatRG = ext.formatR = boundGetSupportedFormat(webGL.RGBA16F, webGL.RGBA, halfFloatTexType);
     } else {
       ext.formatRGBA = ext.formatRG = ext.formatR = boundGetSupportedFormat(webGL.RGBA, webGL.RGBA, halfFloatTexType);
     }
