@@ -39,7 +39,19 @@ function getHue(theme, angle) {
   if (typeof theme === "number") return theme;
   if (Array.isArray(theme)) {
     const [min, max] = theme;
-    return (Math.random() * (max - min) + min) % 1.0;
+    const baseHue = (angle / (2 * Math.PI) + 0.5 + (Date.now() / 1000.0) * 0.1) % 1.0;
+
+    // Handle the full spectrum case [0, 1] or [1, 0]
+    if (Math.abs(max - min) >= 1.0) {
+      return baseHue;
+    }
+
+    // Calculate range, handling wrapped cases (e.g., 0.9 to 0.2)
+    let range = max - min;
+    if (range < 0) {
+      range += 1.0;
+    }
+    return (min + baseHue * range) % 1.0;
   }
   return Math.random();
 }

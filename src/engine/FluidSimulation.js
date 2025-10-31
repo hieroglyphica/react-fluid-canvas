@@ -560,7 +560,7 @@ export class FluidSimulation {
 
     // const resolutionScale = 128.0 / Math.max(1, this.textureWidth);
 
-    // Use backing-store (pixel) aspect like Pavel: keep splats circular in screen pixels.
+    // keep splats circular in screen pixels.
     const backingAspect =
       this.canvas.width && this.canvas.height
         ? this.canvas.width / Math.max(1, this.canvas.height)

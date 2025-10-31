@@ -219,8 +219,22 @@ The simulation is running and updating the canvas in real-time. The component wi
 
 The simulation is published on the web and available for public use.
 
+## Attribution & Credits
+
+- Primary author / maintainer: Hieroglyphica.
+- Conceptual inspiration: The shader-based fluid techniques and visual approach were informed by prior WebGL fluid demos and writeups (e.g. Pavel Dobryakov's widely-referenced fluid demos). These works served as conceptual references only — no code was copied verbatim.
+- AI assistance: Portions of code and documentation were generated or edited with the assistance of language models (GitHub Copilot, Google Gemini). All AI-generated content has been reviewed, adapted, and tested by the maintainer; the maintainer is responsible for the final code and behavior.
+- Third‑party dependencies and assets: See package.json for dependency list and the LICENSE file for licensing details. If you include code or assets from another project, include that project's license/attribution as required.
+
+Suggested short credit for downstream usage
+- "Based on react-fluid-canvas — https://github.com/hieroglyphica/react-fluid-canvas"
+
+If you have questions about any specific file or external reference used during development, open an issue and the maintainer will clarify provenance and licensing for that item.
+
 ## Contributing
 
 The simulation is open source and available for public contribution. Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for details.
 
-Live demo: https://temporal-codex.web.app/fluid
+Live demo: https://react-fluid-canvas.web.app/
+
+<!-- Removed references to example/ folder and local demo commands to avoid shipping demo code in the library package. -->

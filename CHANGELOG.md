@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.18] - 2025-10-29
 
 ### Added
-- Demo: in-repo App.jsx test UI with runtime sliders for quick config testing (DENSITY_DISSIPATION, CURL).
 - New built-in presets: `bouncingRoamer`, `tempoPulse`, `frequencyBands`, `classicalFlow`, `bassPulse`, `ambientDrift`.
 - Example: cleaned custom preset factory added to README for copy/paste usage.
 - Hook: controller.startSplatStream helper for programmatic per-frame splats.

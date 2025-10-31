@@ -613,14 +613,19 @@ export const useFluidSimulation = (
       pointer.texcoordX = newTexcoordX;
       pointer.texcoordY = newTexcoordY;
 
-      pointer.deltaX = rawDeltaX * config.SPLAT_FORCE;
-      pointer.deltaY = rawDeltaY * config.SPLAT_FORCE;
+      // use the up-to-date config rather than the closed-over `config`
+      const cfg = configRef.current || {};
+      const splatForce = Number(cfg.SPLAT_FORCE || 1);
 
-      if (config.COLORFUL) {
+      pointer.deltaX = rawDeltaX * splatForce;
+      pointer.deltaY = rawDeltaY * splatForce;
+
+      if (cfg.COLORFUL) {
         const speed = Math.sqrt(rawDeltaX * rawDeltaX + rawDeltaY * rawDeltaY);
         const brightness = Math.min(speed * 4.0, 1.0);
-        const angle = Math.atan2(rawDeltaY, rawDeltaX);
-        const hue = getHue(config.COLOR_THEME, angle);
+        let angle = Math.atan2(rawDeltaY, rawDeltaX);
+        if (!Number.isFinite(angle)) angle = 0;
+        const hue = getHue(cfg.COLOR_THEME, angle);
         const c = hsvToRgb(hue, 0.8, 1.0);
         pointer.color = [c.r * brightness, c.g * brightness, c.b * brightness];
       }
@@ -633,15 +638,19 @@ export const useFluidSimulation = (
       const rect = canvas.getBoundingClientRect();
       pointer.texcoordX = posX / rect.width;
       pointer.texcoordY = 1.0 - posY / rect.height;
-      if (config.COLORFUL) {
-        pointer.color = [
-          Math.random() * 0.5 + 0.1,
-          Math.random() * 0.5 + 0.1,
-          Math.random() * 0.5 + 0.1,
-        ];
+
+      // read live config so initial down-color follows COLOR_THEME updates
+      const cfg = configRef.current || {};
+      if (cfg.COLORFUL) {
+        // Use the configured theme for the initial splat color.
+        // Pass angle=0 since there is no movement on the initial down event.
+        const hue = getHue(cfg.COLOR_THEME, 0);
+        const rgb = hsvToRgb(hue, 1.0, 1.0);
+        pointer.color = [rgb.r, rgb.g, rgb.b];
       } else {
         pointer.color = [0.3, 0.3, 0.3];
       }
+
       simulationRef.current.addSplat({
         texcoordX: pointer.texcoordX,
         texcoordY: pointer.texcoordY,
