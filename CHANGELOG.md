@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20] - 2025-11-01
+
+### Changed
+- Docs: updated README "Last Stable" to 0.1.20.
+- Chore: fixed a lint warning related to config closure in useFluidSimulation (no functional changes).
+- Note: this release contains only documentation/linting adjustments; all functional changes were part of previous releases.
+
 ## [0.1.19] - 2025-10-31
+
+### Added
+- New built-in presets and exported presets map: `bouncingRoamer`, `tempoPulse`, `frequencyBands`, `classicalFlow`, `bassPulse`, `ambientDrift`.
+
+### Changed
+- Hook: useFluidSimulation now reads live config via `configRef`, batches/throttles incoming `coordinates`, and exposes `startSplatStream` for programmatic per-frame splats.
+- Runtime config: apply updates via `simulation.updateConfig` to avoid recreating WebGL contexts while allowing hot configuration changes.
+
+### Fixed
+- Pointer color: interactive/immediate splats (pointer down/move and immediate splat path) derive hue from the active `COLOR_THEME` (supports numeric or [min,max] ranges) so splat hue follows the configured theme without affecting motion/force.
+
+### Engine / WebGL
+- Improved WebGL capability detection and safer framebuffer/format handling.
+- Added 8-bit downsample + optional sharpen and manual filtering fallbacks to support devices lacking float-linear filtering (iOS fallback path).
+
+### Docs / Demo
+- Replaced in-repo test UI with a minimal, deployable App.jsx and removed demo-only references from README/CHANGELOG; added concise usage examples.
+
+### Misc
+- Small shader, utility (hsvToRgb/getHue) and config/validation tweaks.
+- Lint and stability cleanups.
 
 ## [0.1.18] - 2025-10-29
 

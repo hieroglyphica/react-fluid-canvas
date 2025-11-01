@@ -469,7 +469,9 @@ export const useFluidSimulation = (
 
     let simulation;
     try {
-      simulation = new FluidSimulation(canvas, config);
+      // Use the live ref for config here so this effect does not capture the props `config`.
+      // Runtime updates are applied via the separate updateConfig effect.
+      simulation = new FluidSimulation(canvas, configRef.current);
       simulationRef.current = simulation;
       simulation.run();
       // If a preset (name or factory) was requested before the sim was ready, start it now.

@@ -63,7 +63,6 @@ New props overview
 
 Example — start a built-in preset on mount (declarative)
 ```jsx
-<!-- filepath: c:\Sandbox\react-fluid-canvas\README.md -->
 <FluidSimulation
   preset="orbiting"
   autoPlay={true}
@@ -71,6 +70,7 @@ Example — start a built-in preset on mount (declarative)
   config={{ COLORFUL: true }}
 />
 ```
+
 Note: Because the component accepts `preset` + `autoPlay` props, the preset will be started by the hook when the simulation is ready — you do not need a useEffect just to auto-start a preset.
 
 Custom preset functions (declarative or imperative)
@@ -80,7 +80,6 @@ Custom preset functions (declarative or imperative)
 Note: memoize presetOptions and preset factories
 - To avoid restarting an active preset accidentally, keep `presetOptions` and any custom preset factory references stable with React hooks:
 ```jsx
-// filepath: c:\Sandbox\react-fluid-canvas\README.md
 const presetOptions = useMemo(() => ({ count: 4, center: { x: 0.5, y: 0.5 } }), []);
 const myPresetFactory = useCallback((sim, opts) => { /* ... */ }, []);
 <FluidSimulation preset="orbiting" presetOptions={presetOptions} />
@@ -88,7 +87,6 @@ const myPresetFactory = useCallback((sim, opts) => { /* ... */ }, []);
 
 Example custom preset factory (clean, copy/paste-ready):
 ```jsx
-// filepath: c:\Sandbox\react-fluid-canvas\README.md
 function myCustomPreset(sim, opts = {}) {
   // gentle wandering pointer-like splats
   const speed = Number(opts.speed) || 0.7;
@@ -236,5 +234,3 @@ If you have questions about any specific file or external reference used during 
 The simulation is open source and available for public contribution. Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for details.
 
 Live demo: https://react-fluid-canvas.web.app/
-
-<!-- Removed references to example/ folder and local demo commands to avoid shipping demo code in the library package. -->
